@@ -1,0 +1,1 @@
+bibliotheque qrcode-generator 2.0.4
