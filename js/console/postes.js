@@ -153,6 +153,13 @@
       }
     };
 
+    let listeModeles = [];
+    try {
+      listeModeles = await HUMANO.api.appeler('postes.modeles', null);
+    } catch (ignore) {
+      listeModeles = [];
+    }
+
     if (posteId) {
       try {
         const posteComplet = await HUMANO.api.appeler('postes.obtenir', { id: posteId });
@@ -364,12 +371,40 @@
     const h2Epreuves = HUMANO.ui.creer('h2', { texte: 'Épreuves' });
     carteEpreuves.appendChild(h2Epreuves);
 
-    const barreGenerateurs = HUMANO.ui.creer('div', { classe: 'actions' });
-    const btnModeles = HUMANO.ui.creer('button', {
+    // Sélection d'un modèle d'épreuves
+    const divModele = HUMANO.ui.creer('div', { classe: 'champ' });
+    const lblModele = HUMANO.ui.creer('label', {
+      for: 'poste-modele-select',
+      texte: 'Partir d\'un modèle d\'épreuves'
+    });
+    const selModele = HUMANO.ui.creer('select', { id: 'poste-modele-select' });
+    if (Array.isArray(listeModeles) && listeModeles.length > 0) {
+      listeModeles.forEach(function (m) {
+        const opt = HUMANO.ui.creer('option', { value: m.id, texte: m.libelle });
+        selModele.appendChild(opt);
+      });
+    } else {
+      const opt = HUMANO.ui.creer('option', { value: '', texte: 'Aucun modèle disponible' });
+      selModele.appendChild(opt);
+      selModele.disabled = true;
+    }
+    const actionsModele = HUMANO.ui.creer('div', { classe: 'actions' });
+    const btnChargerModele = HUMANO.ui.creer('button', {
       type: 'button',
       classe: 'bouton',
-      texte: 'Partir d\'un modèle'
+      texte: 'Charger ce modèle'
     });
+    if (!Array.isArray(listeModeles) || listeModeles.length === 0) {
+      btnChargerModele.disabled = true;
+    }
+    actionsModele.appendChild(btnChargerModele);
+    divModele.appendChild(lblModele);
+    divModele.appendChild(selModele);
+    divModele.appendChild(actionsModele);
+    carteEpreuves.appendChild(divModele);
+
+    // Génération par IA
+    const barreGenerateurs = HUMANO.ui.creer('div', { classe: 'actions' });
     const btnGenererIa = HUMANO.ui.creer('button', {
       type: 'button',
       classe: 'bouton',
@@ -379,7 +414,6 @@
       classe: 'aide',
       texte: 'Épreuves proposées par l\'IA : relisez et corrigez avant d\'ouvrir le poste.'
     });
-    barreGenerateurs.appendChild(btnModeles);
     barreGenerateurs.appendChild(btnGenererIa);
     carteEpreuves.appendChild(barreGenerateurs);
     carteEpreuves.appendChild(pAideIa);
@@ -646,24 +680,23 @@
 
     conteneur.appendChild(carteEpreuves);
 
-    // Modèles existants
-    btnModeles.addEventListener('click', async function () {
+    btnChargerModele.addEventListener('click', async function () {
+      const modeleId = selModele.value;
+      if (!modeleId) return;
+      const modeleTrouve = (Array.isArray(listeModeles) ? listeModeles : []).find(function (m) {
+        return m.id === modeleId;
+      });
+      const libelle = modeleTrouve ? modeleTrouve.libelle : modeleId;
+      const confirmation = await HUMANO.ui.confirmer(
+        'Charger le modèle « ' + libelle + ' » ? Les épreuves actuelles seront remplacées.',
+        'Charger le modèle',
+        'Annuler'
+      );
+      if (!confirmation) return;
       try {
-        const modeles = await HUMANO.api.appeler('postes.modeles', null);
-        if (!Array.isArray(modeles) || modeles.length === 0) {
-          HUMANO.ui.afficherMessage('Aucun modèle disponible.', 'info');
-          return;
-        }
-        const premier = modeles[0];
-        const confirmation = await HUMANO.ui.confirmer(
-          'Charger le modèle « ' + premier.libelle + ' » ? Les épreuves actuelles seront remplacées.',
-          'Charger le modèle',
-          'Annuler'
-        );
-        if (!confirmation) return;
-        const epreuvesChargees = await HUMANO.api.appeler('postes.depuisModele', { modeleId: premier.id });
+        const epreuvesChargees = await HUMANO.api.appeler('postes.depuisModele', { modeleId: modeleId });
         appliquerEpreuves(epreuvesChargees);
-        HUMANO.ui.afficherMessage('Modèle « ' + premier.libelle + ' » chargé.', 'succes');
+        HUMANO.ui.afficherMessage('Modèle « ' + libelle + ' » chargé.', 'succes');
       } catch (err) {
         HUMANO.ui.afficherMessage(err.message || 'Impossible de charger le modèle.', 'erreur');
       }
