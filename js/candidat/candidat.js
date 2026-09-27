@@ -22,6 +22,7 @@
   let minuterieFlash = null;
   let annoncesChronoPassees = {};
   let conversationFil = null;
+  let echangesConnus = [];
   let jaugeBloc = null;
   let elementChrono = null;
   let elementFlash = null;
@@ -414,6 +415,9 @@
   }
 
   function orienterVersEtape(etape, echanges) {
+    if (Array.isArray(echanges) && echanges.length > 0) {
+      echangesConnus = echanges;
+    }
     if (etape === 'qcm') {
       afficherQcm();
     } else if (etape === 'questions') {
@@ -724,7 +728,19 @@
     });
   }
 
-  function afficherSimulation(echangesInitiaux) {
+  function afficherSimulation(echangesRecus) {
+    let echangesInitiaux = (Array.isArray(echangesRecus) && echangesRecus.length > 0) ? echangesRecus : echangesConnus;
+    if ((!echangesInitiaux || echangesInitiaux.length === 0) && jetonTestActuel && !afficherSimulation.rechargement) {
+      afficherSimulation.rechargement = true;
+      window.HUMANO.api.appeler('candidat.reprendre', { jetonTest: jetonTestActuel }).then(function (r) {
+        if (r && Array.isArray(r.echanges) && r.echanges.length > 0) {
+          echangesConnus = r.echanges;
+          afficherSimulation(r.echanges);
+        }
+      }).catch(function () {
+        return null;
+      });
+    }
     construireBandeau(3, 'mise en situation');
     const conteneur = document.getElementById('candidat-contenu');
     window.HUMANO.ui.vider(conteneur);
