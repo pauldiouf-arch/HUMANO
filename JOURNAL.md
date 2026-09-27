@@ -1,6 +1,6 @@
 # JOURNAL HUMANO — 27/09/2026
 
-Dernière mise à jour : 14:30
+Dernière mise à jour : 15:50
 
 ## Lots
 
@@ -14,7 +14,10 @@ Dernière mise à jour : 14:30
 | EXECUTE S3-CANDIDAT | index.html, js/candidat/anticheat.js, js/candidat/candidat.js | corrigé, validé | 13:30 |
 | EXECUTE S3-RAPPORT | js/console/tests.js | validé | 13:55 |
 | FIABILITE-IA | supabase/functions/api/index.ts | corrigé, déployé, validé | 14:15 |
-| S4-ADMIN (écrit par Claude) | js/console/admin.js | livré, à valider | 14:30 |
+| S4-ADMIN (écrit par Claude) | js/console/admin.js | validé | 14:30 |
+| DESIGN + TABLEAU DE BORD (Claude) | css/styles.css, img/logo.svg, img/favicon.svg, js/console/accueil.js, auth.js, main.js, index.html, console.html, candidat.js | validé | 14:45 |
+| MOT DE PASSE OUBLIÉ + REGISTRE RGPD (Claude) | index.ts, auth.js, admin.js | livré | 15:00 |
+| README + PRÉSENTATION + VIDÉO | README.md, présentation Kawasaki 10 diapositives, vidéo 89 s | livré | 15:45 |
 
 ## Contrôles
 
@@ -26,6 +29,9 @@ Dernière mise à jour : 14:30
 - Console : création du mot de passe, connexion, poste créé depuis le modèle Fintech (15 min), enregistré, ouvert, QR code affiché, lien scanné sur téléphone : OK (la page candidat n'existe pas encore)
 
 ## Corrections effectuées
+
+- 15:20 — js/candidat/candidat.js : le message d'ouverture de l'interlocuteur s'affiche désormais après le QCM et les questions.
+- 15:00 — index.ts : règle d'équité ajoutée au prompt d'évaluation.
 
 - 13:20 — confidentialite.html : politique de confidentialité et CGU ; lien depuis la notice du candidat → validé.
 - 13:25 — js/candidat/candidat.js : temps de réponse de l'IA non décompté, chrono relancé à chaque changement de fin prévue → validé.
@@ -68,6 +74,4 @@ Dernière mise à jour : 14:30
 
 ## Prochaine commande
 
-- PRESENTATION — textes de soumission, script de la vidéo de 90 s, pitch, déclaration d'utilisation de l'IA (Gemini + Claude).
-- 15:30 : gel du code, passage de CLE_GEMINI à la clé DEMO dans la table proprietes, tournage de la vidéo.
-- 16:15 : soumission.
+- Soumission du formulaire avant 16:30 (heure de Dakar). Code gelé.
