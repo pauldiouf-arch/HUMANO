@@ -1022,6 +1022,10 @@ function donneesEvaluation(poste: any, test: any): string {
   ].join('\n');
 }
 
+function normaliserLibelle(t: any): string {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function creerValidateurEvaluation(poste: any) {
   const libelles = poste.competences.hard.concat(poste.competences.soft).map(libelleCompetence).concat(poste.competences.libres);
   return (o: any) => {
@@ -1032,7 +1036,13 @@ function creerValidateurEvaluation(poste: any) {
     const resultat: any = { note_ia: Math.max(0, Math.min(20, note)) };
     champs.forEach((c) => { resultat[c] = o[c].trim().slice(0, 800); });
     resultat.par_competence = (Array.isArray(o.par_competence) ? o.par_competence : [])
-      .filter((pc: any) => pc && libelles.includes(pc.competence) && ['Insuffisant', 'À confirmer', 'Maîtrisé', 'Remarquable'].includes(pc.niveau))
+      .map((pc: any) => {
+        if (!pc) return null;
+        const cible = normaliserLibelle(pc.competence);
+        const officiel = libelles.find((l: string) => normaliserLibelle(l) === cible) || libelles.find((l: string) => cible.includes(normaliserLibelle(l)) || normaliserLibelle(l).includes(cible));
+        return officiel ? Object.assign({}, pc, { competence: officiel }) : null;
+      })
+      .filter((pc: any) => pc && ['Insuffisant', 'À confirmer', 'Maîtrisé', 'Remarquable'].includes(pc.niveau))
       .map((pc: any) => ({ competence: pc.competence, niveau: pc.niveau, justification: String(pc.justification || '').slice(0, 400) }));
     resultat.par_question = (Array.isArray(o.par_question) ? o.par_question : []).slice(0, CONFIG.QUESTIONS_MAX)
       .map((pq: any) => ({ question: String(pq.question || '').slice(0, 200), note_sur_5: Math.max(0, Math.min(5, Math.round(Number(pq.note_sur_5) || 0))), commentaire: String(pq.commentaire || '').slice(0, 400) }));
@@ -1544,18 +1554,39 @@ const Tests = Object.freeze({
   async evaluerInterne(test: any, poste: any): Promise<any> {
     const msg = donneesEvaluation(poste, test);
     const validateur = creerValidateurEvaluation(poste);
-    const brut = await IA.appeler(CONFIG.MODELE_EVALUATION, PROMPT_EVALUATION, [{ role: 'user', parts: [{ text: msg }] }], SCHEMAS.evaluation, {
-      temperature: 0.3,
-      maxOutputTokens: 4000,
-      thinkingConfig: { thinkingLevel: 'low' }
-    });
-    const evalObj = validateur(brut);
-    if (!evalObj) throw erreur('IA_REPONSE');
+    const essais = [
+      { modele: CONFIG.MODELE_EVALUATION, niveau: 'low', delaiMs: 50000 },
+      { modele: CONFIG.MODELE_SIMULATION, niveau: 'minimal', delaiMs: 25000 }
+    ];
+    let evalObj: any = null;
+    let modeleUtilise = CONFIG.MODELE_EVALUATION;
+    let derniereErreur: any = erreur('IA_REPONSE');
+    for (const essai of essais) {
+      try {
+        const brut = await IA.appeler(essai.modele, PROMPT_EVALUATION, [{ role: 'user', parts: [{ text: msg }] }], SCHEMAS.evaluation, {
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: essai.niveau },
+          delaiMs: essai.delaiMs,
+          rapide: true
+        });
+        evalObj = validateur(brut);
+        if (!evalObj) console.error('Évaluation ' + essai.modele + ' : réponse incomplète ' + JSON.stringify(brut).slice(0, 300));
+      } catch (e) {
+        derniereErreur = e;
+        console.error('Évaluation ' + essai.modele + ' en échec : ' + (e instanceof ErreurHumano ? e.code : String(e)));
+      }
+      if (evalObj) {
+        modeleUtilise = essai.modele;
+        break;
+      }
+    }
+    if (!evalObj) throw derniereErreur;
     const penalite = Math.min(CONFIG.PENALITE_MAX, CONFIG.PENALITE_PAR_SORTIE * test.infractions.sorties.length);
     evalObj.penalite = penalite;
     evalObj.note_finale = Math.max(0, evalObj.note_ia - penalite);
     evalObj.qcm = scoreQcm(poste.epreuves.qcm, test.qcm);
-    evalObj.modele = CONFIG.MODELE_EVALUATION;
+    evalObj.modele = modeleUtilise;
     evalObj.genereeLe = maintenantIso();
     test.evaluation = evalObj;
     test.statut = 'evalue';
@@ -1938,8 +1969,8 @@ const Candidat = Object.freeze({
 
     try {
       await Tests.evaluerInterne(test, poste);
-    } catch {
-      // Évaluation remise en tâche différée si échec immédiat
+    } catch (e) {
+      console.error('Évaluation à la fin du test impossible : ' + (e instanceof ErreurHumano ? e.code : String(e)));
     }
 
     return { termine: true };
