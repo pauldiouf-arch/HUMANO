@@ -1,6 +1,6 @@
 # JOURNAL HUMANO — 27/09/2026
 
-Dernière mise à jour : 14:20
+Dernière mise à jour : 14:30
 
 ## Lots
 
@@ -14,7 +14,7 @@ Dernière mise à jour : 14:20
 | EXECUTE S3-CANDIDAT | index.html, js/candidat/anticheat.js, js/candidat/candidat.js | corrigé, validé | 13:30 |
 | EXECUTE S3-RAPPORT | js/console/tests.js | validé | 13:55 |
 | FIABILITE-IA | supabase/functions/api/index.ts | corrigé, déployé, validé | 14:15 |
-| EXECUTE S4-ADMIN | js/console/admin.js | abandonné (manque de temps) | — |
+| S4-ADMIN (écrit par Claude) | js/console/admin.js | livré, à valider | 14:30 |
 
 ## Contrôles
 
@@ -51,9 +51,10 @@ Dernière mise à jour : 14:20
 - Pas d'e-mails (prototype) : postes.inviter renvoie { envoye: false } ; invitation et notification de fin de test sont seulement journalisées. Le partage se fait par QR code, lien copié ou WhatsApp.
 - Pas de tâches planifiées : la fermeture des tests dont le temps est dépassé se fait au début de postes.lister, tests.lister et tests.obtenir ; l'évaluation se fait à « Terminer » ou par le bouton « Évaluer » du rapport.
 - Durée d'un test : 10 à 180 minutes ; réponse à une question technique : 5 000 caractères au maximum.
-- Le code de la transplantation vers Supabase et ses corrections, la page confidentialite.html, les correctifs du front et la fiabilisation de l'IA (simulation et évaluation) ont été produits avec l'aide de Claude (à mentionner dans la déclaration d'utilisation de l'IA).
+- Le code de la transplantation vers Supabase et ses corrections, la page confidentialite.html, les correctifs du front et la fiabilisation de l'IA (simulation et évaluation) ont été produits avec l'aide de Claude (y compris js/console/admin.js) (à mentionner dans la déclaration d'utilisation de l'IA).
 - Export PDF du rapport : par l'impression du navigateur (« Enregistrer au format PDF »), sans bibliothèque ni service tiers.
-- Pas de console d'administration (S4-ADMIN abandonné) : le second facteur TOTP n'est pas activé dans la démo.
+- Administration : 4 onglets (Sécurité, Journal d'audit, RGPD, Paramètres). La clé Gemini n'est jamais saisie ni affichée dans le navigateur : elle se gère uniquement dans Supabase (table proprietes) ; l'onglet Paramètres indique seulement si le service est configuré.
+- Le second facteur TOTP n'est pas activé sur le compte de démo tant que le calcul n'est pas vérifié.
 
 ## Écarts connus, à traiter à l'AUDIT
 
