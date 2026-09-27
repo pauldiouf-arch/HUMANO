@@ -233,12 +233,12 @@ Le fichier `JOURNAL.md`, à la racine du dépôt, enregistre :
 
 Il sert de mémoire quand une conversation avec l'IA devient trop longue : on ouvre une nouvelle conversation, on lui donne le journal, et elle reprend exactement où l'on en était. Il ne contient jamais ni clé, ni mot de passe, ni donnée de candidat.
 
-### 5.5 Deux IA, deux rôles
+### 5.5 Role de l'ia GEMINI 3.8 Flash
 
-- **Gemini** (Google AI Studio) a produit le code, lot par lot, à partir de la spécification.
-- **Claude** (Anthropic) a joué le rôle de développeur senior dans l'équipe :
-  - il a **relu** chaque livraison ;
-  - il l'a **testée** avec des scénarios automatisés (base de données et IA simulées, rendu des écrans dans un navigateur automatisé) ;
+- (Google AI Studio) a produit le code, lot par lot, à partir de la spécification.
+- Puis a joué le rôle de développeur senior dans l'équipe :
+  - il a relu chaque livraison ;
+  - il l'a testée avec des scénarios automatisés (base de données et IA simulées, rendu des écrans dans un navigateur automatisé) ;
   - il a écrit directement, quand le temps manquait :
     - le portage vers Supabase ;
     - la page de confidentialité ;
