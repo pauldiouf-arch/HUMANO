@@ -1,3 +1,9 @@
+const ENTETES = Object.freeze({
+  postes: ['id', 'statut', 'creeLe', 'majLe', 'donnees'],
+  tests: ['id', 'posteId', 'statut', 'debut', 'finPrevue', 'jetonHash', 'donnees'],
+  journal: ['horodatage', 'acteur', 'action', 'cible', 'detail', 'empreinte']
+});
+
 const ACTIONS = Object.freeze({
   'systeme.etat': { acces: 'public', fn: (d) => Auth.etat() },
   'auth.initialiser': { acces: 'public', fn: (d) => Auth.initialiser(d) },
@@ -50,36 +56,39 @@ function reponseJson(payload) {
 }
 
 function traiterRequete(texteCorps) {
-  if (typeof texteCorps !== 'string' || texteCorps.length > CONFIG.TAILLE_MAX_REQUETE) {
-    return { ok: false, erreur: { code: 'INVALIDE', message: MESSAGES_ERREUR.INVALIDE } };
-  }
-  let requete;
   try {
-    requete = JSON.parse(texteCorps);
-  } catch (e) {
-    return { ok: false, erreur: { code: 'INVALIDE', message: MESSAGES_ERREUR.INVALIDE } };
-  }
-  const cles = Object.keys(requete).sort();
-  if (cles.length !== 3 || cles[0] !== 'action' || cles[1] !== 'donnees' || cles[2] !== 'jeton') {
-    return { ok: false, erreur: { code: 'INVALIDE', message: MESSAGES_ERREUR.INVALIDE } };
-  }
-  const desc = ACTIONS[requete.action];
-  if (!desc) {
-    return { ok: false, erreur: { code: 'INVALIDE', message: MESSAGES_ERREUR.INVALIDE } };
-  }
-
-  let session = null;
-  if (desc.acces === 'admin') {
-    if (!requete.jeton) {
-      return { ok: false, erreur: { code: 'NON_AUTORISE', message: MESSAGES_ERREUR.NON_AUTORISE } };
+    if (typeof texteCorps !== 'string' || texteCorps.length > CONFIG.TAILLE_MAX_REQUETE) {
+      throw erreur('INVALIDE');
     }
-    session = Auth.verifierSession(requete.jeton);
-    if (!session) {
-      return { ok: false, erreur: { code: 'NON_AUTORISE', message: MESSAGES_ERREUR.NON_AUTORISE } };
+    let requete;
+    try {
+      requete = JSON.parse(texteCorps);
+    } catch (e) {
+      throw erreur('INVALIDE');
     }
-  }
+    if (!requete || typeof requete !== 'object' || Array.isArray(requete)) {
+      throw erreur('INVALIDE');
+    }
+    const cles = Object.keys(requete).sort();
+    if (cles.length !== 3 || cles[0] !== 'action' || cles[1] !== 'donnees' || cles[2] !== 'jeton') {
+      throw erreur('INVALIDE');
+    }
+    const desc = ACTIONS[requete.action];
+    if (!desc) {
+      throw erreur('INVALIDE');
+    }
 
-  try {
+    let session = null;
+    if (desc.acces === 'admin') {
+      if (!requete.jeton) {
+        throw erreur('NON_AUTORISE');
+      }
+      session = Auth.verifierSession(requete.jeton);
+      if (!session) {
+        throw erreur('NON_AUTORISE');
+      }
+    }
+
     const resultat = desc.fn(requete.donnees, { jeton: requete.jeton, session: session });
     return { ok: true, donnees: resultat === undefined ? {} : resultat };
   } catch (err) {
@@ -129,26 +138,29 @@ function installer() {
     props.setProperty('CLASSEUR_ID', classeur.getId());
   }
 
-  Object.keys(FEUILLES).forEach((nom) => {
+  Object.keys(ENTETES).forEach((nom) => {
     let feuille = classeur.getSheetByName(nom);
     if (!feuille) {
       feuille = classeur.insertSheet(nom);
     }
-    feuille.getDataRange().setNumberFormat('@');
+    const nbColonnes = ENTETES[nom].length;
+    const maxLignes = feuille.getMaxRows();
+    feuille.getRange(1, 1, maxLignes, nbColonnes).setNumberFormat('@');
     feuille.setFrozenRows(1);
     if (feuille.getLastRow() === 0) {
-      feuille.appendRow(FEUILLES[nom]);
-      feuille.getRange(1, 1, 1, FEUILLES[nom].length).setNumberFormat('@');
+      feuille.appendRow(ENTETES[nom]);
     }
   });
 
-  const feuilleParDefaut = classeur.getSheetByName('Feuille 1');
-  if (feuilleParDefaut && classeur.getSheets().length > 1) {
-    try {
-      classeur.deleteSheet(feuilleParDefaut);
-    } catch (e) {
+  const nomsAutorises = Object.keys(ENTETES);
+  classeur.getSheets().forEach((f) => {
+    if (!nomsAutorises.includes(f.getName())) {
+      try {
+        classeur.deleteSheet(f);
+      } catch (e) {
+      }
     }
-  }
+  });
 
   const declencheurs = ScriptApp.getProjectTriggers();
   declencheurs.forEach((d) => { ScriptApp.deleteTrigger(d); });
