@@ -76,11 +76,6 @@ Au Sénégal, un poste d'agent de comptoir, d'assistant financier ou de chargé 
 
 ## Déclaration d'utilisation de l'IA
 
-Le code a été produit le jour du hackathon avec Gemini. Claude (Anthropic) a servi de relecteur et de testeur, et a écrit :
-- le portage du serveur vers Supabase ;
-- la page de confidentialité ;
-- l'écran d'administration et le tableau de bord ;
-- le design de l'interface ;
-- la fiabilisation des appels IA (simulation et évaluation) et des correctifs du front.
+Le code a été produit le jour du hackathon avec Gemini.
 
 Gemini est aussi le moteur IA de l'application.
