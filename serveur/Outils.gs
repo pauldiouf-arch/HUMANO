@@ -1,6 +1,6 @@
 class ErreurHumano extends Error {
-  constructor(code, message) {
-    super(message || (MESSAGES_ERREUR[code] || MESSAGES_ERREUR.INTERNE));
+  constructor(code) {
+    super(MESSAGES_ERREUR[code] || MESSAGES_ERREUR.INTERNE);
     this.name = 'ErreurHumano';
     this.code = code;
   }
@@ -25,7 +25,7 @@ const MESSAGES_ERREUR = Object.freeze({
 });
 
 function erreur(code) {
-  return new ErreurHumano(code, MESSAGES_ERREUR[code] || MESSAGES_ERREUR.INTERNE);
+  return new ErreurHumano(code);
 }
 
 function maintenantIso() {
@@ -33,44 +33,41 @@ function maintenantIso() {
 }
 
 function octetsVersHex(octets) {
-  return octets.map((b) => ('0' + ((b < 0 ? b + 256 : b).toString(16))).slice(-2)).join('');
+  let hex = '';
+  for (let i = 0; i < octets.length; i++) {
+    const b = octets[i] < 0 ? octets[i] + 256 : octets[i];
+    hex += b.toString(16).padStart(2, '0');
+  }
+  return hex;
 }
 
 function sha256Hex(texte) {
-  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(texte), Utilities.Charset.UTF_8);
-  return octetsVersHex(digest);
+  const octets = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(texte), Utilities.Charset.UTF_8);
+  return octetsVersHex(octets);
 }
 
 function jetonAleatoire() {
-  const u1 = Utilities.getUuid().split('-').join('').toLowerCase();
-  const u2 = Utilities.getUuid().split('-').join('').toLowerCase();
-  return (u1 + u2).slice(0, 64);
+  const u1 = Utilities.getUuid().replace(/-/g, '');
+  const u2 = Utilities.getUuid().replace(/-/g, '');
+  return (u1 + u2).toLowerCase();
 }
 
 function genererId(prefixe) {
-  const hex = Utilities.getUuid().split('-').join('').toLowerCase().slice(0, 12);
-  return String(prefixe) + hex;
+  const u = Utilities.getUuid().replace(/-/g, '').slice(0, 12).toLowerCase();
+  return prefixe + u;
 }
 
 function egaliteConstante(a, b) {
-  const sA = String(a);
-  const sB = String(b);
-  if (sA.length !== sB.length) return false;
-  let diff = 0;
-  for (let i = 0; i < sA.length; i++) {
-    diff |= sA.charCodeAt(i) ^ sB.charCodeAt(i);
+  const sa = String(a || '');
+  const sb = String(b || '');
+  let diff = sa.length ^ sb.length;
+  const len = Math.max(sa.length, sb.length);
+  for (let i = 0; i < len; i++) {
+    const ca = i < sa.length ? sa.charCodeAt(i) : 0;
+    const cb = i < sb.length ? sb.charCodeAt(i) : 0;
+    diff |= ca ^ cb;
   }
   return diff === 0;
-}
-
-function masquerEmail(email) {
-  const s = String(email || '').trim().toLowerCase();
-  const parties = s.split('@');
-  if (parties.length !== 2) return '***';
-  const local = parties[0];
-  const domaine = parties[1];
-  const premier = local.length > 0 ? local.charAt(0) : '';
-  return premier + '***@' + domaine;
 }
 
 const Valider = Object.freeze({
@@ -78,47 +75,92 @@ const Valider = Object.freeze({
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw erreur('INVALIDE');
     return v;
   },
-  texte(v, min, max) {
+  texte(v, a, b, c) {
     if (typeof v !== 'string') throw erreur('INVALIDE');
     const t = v.trim();
-    if (t.length < min || (max !== undefined && t.length > max)) throw erreur('INVALIDE');
+    let min;
+    let max;
+    if (typeof a === 'string') {
+      min = b;
+      max = c;
+    } else {
+      min = a;
+      max = b;
+    }
+    const inf = min !== undefined ? min : 0;
+    const sup = max !== undefined ? max : Infinity;
+    if (t.length < inf || t.length > sup) throw erreur('INVALIDE');
     return t;
   },
-  entier(v, min, max) {
-    const n = Number(v);
-    if (!Number.isInteger(n) || n < min || (max !== undefined && n > max)) throw erreur('INVALIDE');
-    return n;
+  entier(v, a, b, c) {
+    if (typeof v !== 'number' || !Number.isInteger(v)) throw erreur('INVALIDE');
+    let min;
+    let max;
+    if (typeof a === 'string') {
+      min = b;
+      max = c;
+    } else {
+      min = a;
+      max = b;
+    }
+    if (min !== undefined && v < min) throw erreur('INVALIDE');
+    if (max !== undefined && v > max) throw erreur('INVALIDE');
+    return v;
   },
   booleen(v) {
     if (typeof v !== 'boolean') throw erreur('INVALIDE');
     return v;
   },
-  parmi(v, liste) {
-    if (!liste.includes(v)) throw erreur('INVALIDE');
+  parmi(v, a, b) {
+    const liste = Array.isArray(a) ? a : (Array.isArray(b) ? b : null);
+    if (!liste || !liste.includes(v)) throw erreur('INVALIDE');
     return v;
   },
-  identifiant(v, prefixe) {
-    if (typeof v !== 'string' || !v.startsWith(prefixe) || v.length !== prefixe.length + 12) {
-      throw erreur('INVALIDE');
+  identifiant(v, second) {
+    if (typeof v !== 'string') throw erreur('INVALIDE');
+    if (second === 'p_' || second === 'c_' || second === 's_') {
+      const regex = new RegExp('^' + second + '[0-9a-f]{12}$');
+      if (!regex.test(v)) throw erreur('INVALIDE');
+      return v;
     }
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(v)) throw erreur('INVALIDE');
     return v;
   },
   jeton(v) {
     if (typeof v !== 'string' || !/^[0-9a-f]{64}$/.test(v)) throw erreur('INVALIDE');
     return v;
   },
-  liste(v, min, max) {
-    if (!Array.isArray(v) || v.length < min || (max !== undefined && v.length > max)) {
-      throw erreur('INVALIDE');
+  liste(v, a, b, c) {
+    if (!Array.isArray(v)) throw erreur('INVALIDE');
+    let min;
+    let max;
+    if (typeof a === 'string') {
+      min = b;
+      max = c;
+    } else {
+      min = a;
+      max = b;
     }
+    const inf = min !== undefined ? min : 0;
+    const sup = max !== undefined ? max : Infinity;
+    if (v.length < inf || v.length > sup) throw erreur('INVALIDE');
     return v;
   },
   email(v) {
     if (typeof v !== 'string') throw erreur('INVALIDE');
-    const t = v.trim().toLowerCase();
-    if (t.length > CONFIG.LONGUEUR.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) {
-      throw erreur('INVALIDE');
-    }
+    const t = v.trim();
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!regex.test(t) || t.length > 120) throw erreur('INVALIDE');
     return t;
   }
 });
+
+function masquerEmail(email) {
+  const s = String(email || '').trim();
+  const parties = s.split('@');
+  if (parties.length !== 2) return '***';
+  const local = parties[0];
+  const dom = parties[1];
+  const masq = local.length <= 1 ? '*' : local[0] + '***';
+  return masq + '@' + dom;
+}
