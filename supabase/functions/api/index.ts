@@ -1144,6 +1144,12 @@ const IA = Object.freeze({
     };
 
     let rep = await executer(corps);
+    if (rep.status === 400 && corps.generationConfig && corps.generationConfig.thinkingConfig) {
+      const sansReflexion = JSON.parse(JSON.stringify(corps));
+      delete sansReflexion.generationConfig.thinkingConfig;
+      rep = await executer(sansReflexion);
+      if (rep.status >= 200 && rep.status < 300) corps = sansReflexion;
+    }
     if (rep.status === 400 && rep.texte.includes('responseJsonSchema')) {
       const secours = JSON.parse(JSON.stringify(corps));
       const schema = secours.generationConfig.responseJsonSchema;
@@ -1774,10 +1780,15 @@ const Candidat = Object.freeze({
 
     const prompt = promptSimulation(poste, test, tour);
     const contenus = contenusSimulation(test);
+    const debutIa = Date.now();
     const brut = await IA.appeler(CONFIG.MODELE_SIMULATION, prompt, contenus, SCHEMAS.simulation, {
       temperature: 0.8,
-      maxOutputTokens: 600
+      maxOutputTokens: 600,
+      thinkingConfig: { thinkingLevel: 'minimal' }
     });
+    const attenteIaMs = Date.now() - debutIa;
+    test.finPrevue = new Date(new Date(test.finPrevue).getTime() + attenteIaMs).toISOString();
+    test.attenteIaCompenseeMs = (test.attenteIaCompenseeMs || 0) + attenteIaMs;
     const repIA = IA.validerSimulation(brut);
     if (!repIA) throw erreur('IA_REPONSE');
 
