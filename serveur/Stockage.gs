@@ -13,17 +13,23 @@ function celluleSure(valeur) {
 }
 
 let verrouDetenu = false;
+let classeurMemo = null;
+const feuillesMemo = {};
 
 const Stockage = Object.freeze({
   classeur() {
+    if (classeurMemo) return classeurMemo;
     const id = PropertiesService.getScriptProperties().getProperty('CLASSEUR_ID');
     if (!id) throw erreur('INTERNE');
-    return SpreadsheetApp.openById(id);
+    classeurMemo = SpreadsheetApp.openById(id);
+    return classeurMemo;
   },
   feuille(nom) {
+    if (feuillesMemo[nom]) return feuillesMemo[nom];
     const c = Stockage.classeur();
     const f = c.getSheetByName(nom);
     if (!f) throw erreur('INTERNE');
+    feuillesMemo[nom] = f;
     return f;
   },
   lignes(nom) {
