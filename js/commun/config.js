@@ -17,7 +17,7 @@
   }
 
   window.HUMANO.config = Object.freeze({
-    URL_API: 'https://script.google.com/macros/s/AKfycbys4TQAG8MTQp5nwUmWt5OK2W7JXKdo6Z84iJLdKg69smOumw5cvLjXXi1-u4FRUEE4/exec',
+    URL_API: 'https://adkbmydcdkcdemmvzdiw.supabase.co/functions/v1/api',
     DELAI_MS: 30000,
     DELAI_LONG_MS: 90000,
     ACTIONS_LONGUES: Object.freeze(['candidat.terminer', 'tests.evaluer', 'postes.generer']),
