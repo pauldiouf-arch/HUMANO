@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HUMANO — Console de recrutement</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/lib/qrcode.js" integrity="sha384-e9EFD6BGC90bkW9aDV5xbbBfzwN7G8YImHao2lfLVKV/hPB0E0go+H3I64h7oHtA" defer></script>
+  <script src="js/commun/config.js" defer></script>
+  <script src="js/commun/ui.js" defer></script>
+  <script src="js/commun/api.js" defer></script>
+  <script src="js/console/auth.js" defer></script>
+  <script src="js/console/postes.js" defer></script>
+  <script src="js/console/tests.js" defer></script>
+  <script src="js/console/admin.js" defer></script>
+  <script src="js/console/main.js" defer></script>
+</head>
+<body>
+  <a class="lien-evitement" href="#contenu">Aller au contenu</a>
+  <header class="entete" id="entete-console">
+    <span class="marque">HUMANO</span>
+    <nav class="navigation" id="navigation-console" aria-label="Navigation principale" hidden>
+      <a href="#/postes" id="lien-nav-postes">Postes</a>
+      <a href="#/admin/securite" id="lien-nav-admin">Administration</a>
+      <button type="button" id="bouton-nav-deconnexion" class="bouton">Se déconnecter</button>
+    </nav>
+  </header>
+  <main id="contenu" class="conteneur console-large">
+    <div id="message-global"></div>
+    <section class="ecran" id="ecran-connexion" hidden>
+      <h1 tabindex="-1" id="titre-connexion">Connexion</h1>
+      <div id="conteneur-auth"></div>
+    </section>
+    <section class="ecran" id="ecran-postes" hidden>
+      <h1 tabindex="-1" id="titre-postes">Postes</h1>
+      <div id="conteneur-postes"></div>
+    </section>
+    <section class="ecran" id="ecran-poste" hidden>
+      <h1 tabindex="-1" id="titre-poste">Détail du poste</h1>
+      <div id="conteneur-poste"></div>
+    </section>
+    <section class="ecran" id="ecran-editeur" hidden>
+      <h1 tabindex="-1" id="titre-editeur">Éditeur de poste</h1>
+      <div id="conteneur-editeur"></div>
+    </section>
+    <section class="ecran" id="ecran-rapport" hidden>
+      <h1 tabindex="-1" id="titre-rapport">Rapport de test</h1>
+      <div id="conteneur-rapport"></div>
+    </section>
+    <section class="ecran" id="ecran-admin" hidden>
+      <h1 tabindex="-1" id="titre-admin">Administration</h1>
+      <nav class="sous-navigation" id="sous-nav-admin" aria-label="Sous-navigation administration">
+        <a href="#/admin/securite" id="lien-admin-securite">Sécurité</a>
+        <a href="#/admin/journal" id="lien-admin-journal">Journal d'audit</a>
+        <a href="#/admin/rgpd" id="lien-admin-rgpd">RGPD</a>
+        <a href="#/admin/parametres" id="lien-admin-parametres">Paramètres</a>
+      </nav>
+      <div id="conteneur-admin"></div>
+    </section>
+    <section class="ecran" id="ecran-attente" hidden>
+      <h1 tabindex="-1" id="titre-attente">Chargement</h1>
+      <p id="attente-message" class="attente">Chargement en cours…</p>
+    </section>
+  </main>
+  <div id="annonce-polie" class="visuellement-cache" role="status" aria-live="polite"></div>
+  <div id="annonce-urgente" class="visuellement-cache" role="alert" aria-live="assertive"></div>
+  <dialog id="dialogue-confirmation" aria-labelledby="dialogue-message">
+    <p id="dialogue-message"></p>
+    <div class="actions">
+      <button type="button" id="dialogue-annuler" class="bouton">Annuler</button>
+      <button type="button" id="dialogue-ok" class="bouton-principal">Confirmer</button>
+    </div>
+  </dialog>
+</body>
+</html>
