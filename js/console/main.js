@@ -10,6 +10,23 @@
   }
 
   let minuterieInactivite = null;
+  let inactiviteMinutesDefaut = 30;
+
+  function obtenirInactiviteMinutes() {
+    if (window.HUMANO && Number.isFinite(window.HUMANO.inactiviteMin) && window.HUMANO.inactiviteMin > 0) {
+      return window.HUMANO.inactiviteMin;
+    }
+    try {
+      const stocke = window.sessionStorage.getItem('humano.inactiviteMin');
+      if (stocke) {
+        const val = parseInt(stocke, 10);
+        if (Number.isFinite(val) && val > 0) return val;
+      }
+    } catch (e) {
+      // Ignorer
+    }
+    return inactiviteMinutesDefaut;
+  }
 
   function reinitialiserInactivite() {
     if (minuterieInactivite) {
@@ -19,7 +36,8 @@
     if (!HUMANO.api.jetonCourant()) {
       return;
     }
-    const dureeMs = HUMANO.config.SESSION_INACTIVITE_MIN * 60 * 1000;
+    const minutes = obtenirInactiviteMinutes();
+    const dureeMs = minutes * 60 * 1000;
     minuterieInactivite = window.setTimeout(function () {
       HUMANO.api.oublierJeton();
       majNavigation();
@@ -162,7 +180,13 @@
   window.HUMANO = window.HUMANO || {};
   window.HUMANO.main = Object.freeze({
     router: router,
-    majNavigation: majNavigation
+    majNavigation: majNavigation,
+    definirInactiviteMin: function (min) {
+      const val = parseInt(min, 10);
+      if (Number.isFinite(val) && val > 0) {
+        inactiviteMinutesDefaut = val;
+      }
+    }
   });
 
   if (document.readyState === 'loading') {
