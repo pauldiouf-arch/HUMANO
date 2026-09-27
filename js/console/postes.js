@@ -1038,7 +1038,13 @@
       btnCopier.addEventListener('click', async function () {
         try {
           await navigator.clipboard.writeText(poste.lien);
-          HUMANO.ui.afficherMessage('Lien copié dans le presse-papiers.', 'succes');
+          btnCopier.textContent = 'Lien copié';
+          btnCopier.classList.add('bouton-principal');
+          HUMANO.ui.annoncer('Lien copié dans le presse-papiers.');
+          window.setTimeout(function () {
+            btnCopier.textContent = 'Copier le lien';
+            btnCopier.classList.remove('bouton-principal');
+          }, 2500);
         } catch (err) {
           HUMANO.ui.afficherMessage('Copie impossible. Copiez le lien manuellement.', 'erreur');
         }
