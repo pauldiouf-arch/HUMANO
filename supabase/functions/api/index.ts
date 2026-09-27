@@ -5,6 +5,9 @@ const CONFIG = Object.freeze({
   VERSION: '1.0.0',
   VERSION_NOTICE: '2026-09-27',
   MODELE_SIMULATION: 'gemini-3.5-flash-lite',
+  MODELES_SIMULATION_SECOURS: ['gemini-3.8-flash'],
+  DELAI_SIMULATION_MS: 12000,
+  HISTORIQUE_SIMULATION_MAX: 10,
   MODELE_EVALUATION: 'gemini-3.8-flash',
   MODELE_GENERATION: 'gemini-3.8-flash',
   URL_API_IA: 'https://generativelanguage.googleapis.com/v1beta/models/',
@@ -935,7 +938,14 @@ function promptSimulation(poste: any, test: any, tour: 'ordinaire' | 'chrono' | 
 
 function contenusSimulation(test: any): any[] {
   const contenus: any[] = [{ role: 'user', parts: [{ text: 'Début de la simulation. Le candidat s\'appelle ' + test.candidat.prenom + '.' }] }];
-  test.echanges.forEach((e: any) => {
+  const tous = test.echanges;
+  let recents = tous;
+  if (tous.length > CONFIG.HISTORIQUE_SIMULATION_MAX + 1) {
+    let fin = tous.slice(tous.length - CONFIG.HISTORIQUE_SIMULATION_MAX);
+    if (fin[0].role !== 'candidat') fin = fin.slice(1);
+    recents = [tous[0]].concat(fin);
+  }
+  recents.forEach((e: any) => {
     if (e.role === 'candidat') {
       contenus.push({ role: 'user', parts: [{ text: '<<<CANDIDAT\n' + e.texte + '\nCANDIDAT>>>' }] });
     } else {
@@ -943,6 +953,29 @@ function contenusSimulation(test: any): any[] {
     }
   });
   return contenus;
+}
+
+let modeleSimulationPrefere: string = CONFIG.MODELE_SIMULATION;
+
+const REPLIQUES_SECOURS = Object.freeze({
+  ordinaire: [
+    'Attendez, je n\'ai pas bien compris. Concrètement, qu\'est-ce que vous faites maintenant, et dans quel délai ?',
+    'D\'accord… mais moi j\'ai besoin de quelque chose de précis. Quelle est la prochaine étape, exactement ?',
+    'Bon. Et si ça ne marche pas, c\'est quoi votre plan B ? Je veux une réponse claire.',
+    'Vous êtes sûr de ce que vous me dites ? Répétez-moi ce que vous allez faire, point par point.'
+  ],
+  chrono: ['Écoutez, je n\'ai plus le temps, je vais raccrocher. Donnez-moi une réponse claire, tout de suite.'],
+  dernier: ['Bon, je note ce que vous m\'avez dit. On verra si c\'est tenu. Au revoir.']
+});
+
+function repliqueSecours(poste: any, test: any, tour: 'ordinaire' | 'chrono' | 'dernier'): { message_interlocuteur: string; variation_stress: number; motif_variation: string } {
+  const liste = REPLIQUES_SECOURS[tour];
+  const deja = test.echanges.filter((e: any) => e.secours).length;
+  return {
+    message_interlocuteur: liste[deja % liste.length],
+    variation_stress: 0,
+    motif_variation: 'Réplique de secours (IA indisponible), non évaluée'
+  };
 }
 
 const PROMPT_EVALUATION = [
@@ -985,7 +1018,7 @@ function donneesEvaluation(poste: any, test: any): string {
     'ÉVÉNEMENT FLASH : ' + test.flash.etat,
     'SORTIES DE PAGE : ' + test.infractions.sorties.length + ' — COLLAGES BLOQUÉS : ' + test.infractions.collagesBloques + ' — INSERTIONS SUSPECTES : ' + test.infractions.insertionsSuspectes,
     'TRANSCRIPTION DE LA MISE EN SITUATION :',
-    test.echanges.map((x: any) => (x.role === 'candidat' ? '[Candidat] ' : '[Interlocuteur] ') + anonymiser(x.texte)).join('\n')
+    test.echanges.map((x: any) => (x.role === 'candidat' ? '[Candidat] ' : (x.secours ? '[Interlocuteur, réplique automatique de secours, ne pas évaluer] ' : '[Interlocuteur] ')) + anonymiser(x.texte)).join('\n')
   ].join('\n');
 }
 
@@ -1123,7 +1156,7 @@ const IA = Object.freeze({
     ctxCourant.proprietes.set(cle, String(compte + 1));
     ctxCourant.proprietesModifiees.set(cle, String(compte + 1));
   },
-  async requete(modele: string, corps: any): Promise<any> {
+  async requete(modele: string, corps: any, opts: { delaiMs?: number; rapide?: boolean } = {}): Promise<any> {
     if (!ctxCourant) throw erreur('INTERNE');
     const cleIa = ctxCourant.proprietes.get('CLE_GEMINI');
     if (!cleIa) throw erreur('IA_CLE');
@@ -1131,16 +1164,25 @@ const IA = Object.freeze({
     const url = CONFIG.URL_API_IA + modele + ':generateContent';
 
     const executer = async (bodyPayload: any) => {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleIa
-        },
-        body: JSON.stringify(bodyPayload)
-      });
-      const texte = await res.text();
-      return { status: res.status, texte };
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': cleIa
+          },
+          body: JSON.stringify(bodyPayload),
+          signal: AbortSignal.timeout(opts.delaiMs ?? DELAI_IA_MS)
+        });
+        const texte = await res.text();
+        if (res.status < 200 || res.status >= 300) {
+          console.error('Gemini ' + modele + ' HTTP ' + res.status + ' : ' + texte.slice(0, 500));
+        }
+        return { status: res.status, texte };
+      } catch (e) {
+        console.error('Gemini ' + modele + ' sans réponse : ' + String(e));
+        return { status: 504, texte: '' };
+      }
     };
 
     let rep = await executer(corps);
@@ -1159,7 +1201,7 @@ const IA = Object.freeze({
       rep = await executer(secours);
     }
 
-    if (rep.status === 429 || (rep.status >= 500 && rep.status <= 599)) {
+    if (!opts.rapide && (rep.status === 429 || (rep.status >= 500 && rep.status <= 599 && rep.status !== 504))) {
       const delai = rep.status === 429 ? 5000 : 2000;
       await new Promise((resolve) => setTimeout(resolve, delai));
       rep = await executer(corps);
@@ -1179,14 +1221,27 @@ const IA = Object.freeze({
     }
   },
   extraire(reponse: any): any {
+    let text = '';
     try {
-      const text = reponse.candidates[0].content.parts[0].text;
-      return JSON.parse(text);
+      const parts = reponse.candidates[0].content.parts;
+      text = parts.filter((p: any) => typeof p.text === 'string' && !p.thought).map((p: any) => p.text).join('');
     } catch {
       throw erreur('IA_REPONSE');
     }
+    const nettoye = text.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim();
+    try {
+      return JSON.parse(nettoye);
+    } catch {
+      const debut = nettoye.indexOf('{');
+      const fin = nettoye.lastIndexOf('}');
+      if (debut >= 0 && fin > debut) {
+        try { return JSON.parse(nettoye.slice(debut, fin + 1)); } catch { /* suite */ }
+      }
+      console.error('Gemini réponse illisible : ' + nettoye.slice(0, 300));
+      throw erreur('IA_REPONSE');
+    }
   },
-  async appeler(modele: string, systeme: string, contenus: any[], schema: any, options: { temperature?: number; maxOutputTokens?: number; thinkingConfig?: any } = {}): Promise<any> {
+  async appeler(modele: string, systeme: string, contenus: any[], schema: any, options: { temperature?: number; maxOutputTokens?: number; thinkingConfig?: any; delaiMs?: number; rapide?: boolean } = {}): Promise<any> {
     const generationConfig: any = {
       responseMimeType: 'application/json',
       responseJsonSchema: schema,
@@ -1201,7 +1256,7 @@ const IA = Object.freeze({
       contents: contenus,
       generationConfig
     };
-    const rep = await IA.requete(modele, corps);
+    const rep = await IA.requete(modele, corps, { delaiMs: options.delaiMs, rapide: options.rapide });
     return IA.extraire(rep);
   },
   validerSimulation(o: any): { message_interlocuteur: string; variation_stress: number; motif_variation: string } | null {
@@ -1781,16 +1836,36 @@ const Candidat = Object.freeze({
     const prompt = promptSimulation(poste, test, tour);
     const contenus = contenusSimulation(test);
     const debutIa = Date.now();
-    const brut = await IA.appeler(CONFIG.MODELE_SIMULATION, prompt, contenus, SCHEMAS.simulation, {
-      temperature: 0.8,
-      maxOutputTokens: 600,
-      thinkingConfig: { thinkingLevel: 'minimal' }
-    });
+    let repIA: { message_interlocuteur: string; variation_stress: number; motif_variation: string } | null = null;
+    let secours = false;
+    const chaine = [CONFIG.MODELE_SIMULATION].concat(CONFIG.MODELES_SIMULATION_SECOURS);
+    const ordre = [modeleSimulationPrefere].concat(chaine.filter((m) => m !== modeleSimulationPrefere));
+    for (const modele of ordre) {
+      try {
+        const brut = await IA.appeler(modele, prompt, contenus, SCHEMAS.simulation, {
+          temperature: 0.8,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingLevel: 'minimal' },
+          delaiMs: CONFIG.DELAI_SIMULATION_MS,
+          rapide: true
+        });
+        repIA = IA.validerSimulation(brut);
+      } catch (e) {
+        console.error('Simulation ' + modele + ' en échec : ' + (e instanceof ErreurHumano ? e.code : String(e)));
+        repIA = null;
+      }
+      if (repIA) {
+        modeleSimulationPrefere = modele;
+        break;
+      }
+    }
+    if (!repIA) {
+      repIA = repliqueSecours(poste, test, tour);
+      secours = true;
+    }
     const attenteIaMs = Date.now() - debutIa;
     test.finPrevue = new Date(new Date(test.finPrevue).getTime() + attenteIaMs).toISOString();
     test.attenteIaCompenseeMs = (test.attenteIaCompenseeMs || 0) + attenteIaMs;
-    const repIA = IA.validerSimulation(brut);
-    if (!repIA) throw erreur('IA_REPONSE');
 
     const nouveauStress = Math.max(0, Math.min(100, test.stress + repIA.variation_stress));
     test.stress = nouveauStress;
@@ -1800,7 +1875,8 @@ const Candidat = Object.freeze({
       horodatage: maintenantIso(),
       variation: repIA.variation_stress,
       motif: repIA.motif_variation,
-      stressApres: nouveauStress
+      stressApres: nouveauStress,
+      secours
     });
 
     const nbInterlocuteur = test.echanges.filter((x: any) => x.role === 'interlocuteur').length;
@@ -2171,7 +2247,17 @@ async function traiter(req: Request, supabase: any): Promise<Response> {
   }
 }
 
+const DELAI_IA_MS = 25000;
+const DELAI_REQUETE_MS = 80000;
+
 let fileAttente: Promise<unknown> = Promise.resolve();
+
+function avecDelai(p: Promise<Response>): Promise<Response> {
+  return Promise.race([
+    p,
+    new Promise<Response>((resolve) => setTimeout(() => resolve(reponseErreur('IA_INDISPONIBLE')), DELAI_REQUETE_MS))
+  ]);
+}
 
 Deno.serve((req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -2181,7 +2267,7 @@ Deno.serve((req: Request) => {
     return reponseErreur('INVALIDE');
   }
   const supabase = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
-  const resultat = fileAttente.then(() => traiter(req, supabase));
+  const resultat = fileAttente.then(() => avecDelai(traiter(req, supabase)));
   fileAttente = resultat.catch(() => undefined);
   return resultat;
 });
