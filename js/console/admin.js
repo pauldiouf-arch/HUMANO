@@ -265,8 +265,7 @@
     const c = carte('Paramètres');
     c.appendChild(champ('admin-url', 'URL publique du site (se termine par /)', { type: 'url', value: p.urlPublique || '' }));
     c.appendChild(champ('admin-email', 'E-mail de notification (facultatif)', { type: 'email', value: p.emailNotification || '', autocomplete: 'email' }));
-    c.appendChild(champ('admin-cle', 'Clé Gemini (laisser vide pour ne pas la changer)', { type: 'password', autocomplete: 'off' }));
-    c.appendChild(el('p', { classe: 'aide', texte: p.cleIaConfiguree ? 'Clé configurée.' : 'Aucune clé.' }));
+    c.appendChild(el('p', { classe: 'aide', texte: 'Intelligence artificielle : ' + (p.cleIaConfiguree ? 'service configuré.' : 'service non configuré.') + ' La clé se gère uniquement côté serveur, jamais depuis le navigateur.' }));
     const a = el('div', { classe: 'actions' });
     a.appendChild(bouton('Enregistrer', 'bouton-principal', async function () {
       const url = valeur('admin-url');
@@ -275,7 +274,7 @@
         conservationJours: p.conservationJours,
         emailNotification: valeur('admin-email'),
         urlPublique: url,
-        cleIa: valeur('admin-cle')
+        cleIa: ''
       });
       H.ui.afficherMessage('Paramètres enregistrés.', 'succes');
       await afficherOnglet('parametres');
