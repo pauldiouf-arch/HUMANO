@@ -1,6 +1,6 @@
 # JOURNAL HUMANO — 27/09/2026
 
-Dernière mise à jour : 12:55
+Dernière mise à jour : 14:20
 
 ## Lots
 
@@ -11,7 +11,10 @@ Dernière mise à jour : 12:55
 | EXECUTE S2-COMMUN | css/styles.css, js/commun/config.js, js/commun/ui.js, js/commun/api.js | validé | 11:00 |
 | EXECUTE S2-CONSOLE-A | console.html, js/console/main.js, js/console/auth.js, js/console/postes.js | corrigé, validé | 12:50 |
 | PORTAGE-SUPABASE | supabase/schema.sql, supabase/functions/api/index.ts | corrigé, déployé, validé | 12:45 |
-| EXECUTE S3-CANDIDAT | index.html, js/candidat/anticheat.js, js/candidat/candidat.js | à faire | — |
+| EXECUTE S3-CANDIDAT | index.html, js/candidat/anticheat.js, js/candidat/candidat.js | corrigé, validé | 13:30 |
+| EXECUTE S3-RAPPORT | js/console/tests.js | validé | 13:55 |
+| FIABILITE-IA | supabase/functions/api/index.ts | corrigé, déployé, validé | 14:15 |
+| EXECUTE S4-ADMIN | js/console/admin.js | abandonné (manque de temps) | — |
 
 ## Contrôles
 
@@ -23,6 +26,12 @@ Dernière mise à jour : 12:55
 - Console : création du mot de passe, connexion, poste créé depuis le modèle Fintech (15 min), enregistré, ouvert, QR code affiché, lien scanné sur téléphone : OK (la page candidat n'existe pas encore)
 
 ## Corrections effectuées
+
+- 13:20 — confidentialite.html : politique de confidentialité et CGU ; lien depuis la notice du candidat → validé.
+- 13:25 — js/candidat/candidat.js : temps de réponse de l'IA non décompté, chrono relancé à chaque changement de fin prévue → validé.
+- 13:30 — js/console/postes.js : retour visuel « Lien copié » → validé.
+- 14:05 — index.ts, simulation : délai de 12 s par appel, modèle de secours gemini-3.8-flash, réplique de secours dans le rôle si l'IA ne répond pas (signalée « non évaluée » dans le rapport), lecture tolérante du JSON, historique limité aux 10 derniers messages → validé.
+- 14:15 — index.ts, évaluation : délai de 50 s, modèle de secours gemini-3.5-flash-lite, reconnaissance souple des libellés de compétences, erreurs journalisées dans les Logs → validé.
 
 - 10:20 — serveur/Code.gs : en-têtes ENTETES, format texte brut, feuilles superflues, traiterRequete sous try/catch → validé (Apps Script, abandonné depuis).
 - 11:25 — js/console/main.js : délai d'inactivité (NaN → déconnexion immédiate) ; inactiviteMin du serveur, 30 min par défaut → validé.
@@ -42,7 +51,9 @@ Dernière mise à jour : 12:55
 - Pas d'e-mails (prototype) : postes.inviter renvoie { envoye: false } ; invitation et notification de fin de test sont seulement journalisées. Le partage se fait par QR code, lien copié ou WhatsApp.
 - Pas de tâches planifiées : la fermeture des tests dont le temps est dépassé se fait au début de postes.lister, tests.lister et tests.obtenir ; l'évaluation se fait à « Terminer » ou par le bouton « Évaluer » du rapport.
 - Durée d'un test : 10 à 180 minutes ; réponse à une question technique : 5 000 caractères au maximum.
-- Le code de la transplantation vers Supabase et ses corrections ont été produits avec l'aide de Claude (à mentionner dans la déclaration d'utilisation de l'IA).
+- Le code de la transplantation vers Supabase et ses corrections, la page confidentialite.html, les correctifs du front et la fiabilisation de l'IA (simulation et évaluation) ont été produits avec l'aide de Claude (à mentionner dans la déclaration d'utilisation de l'IA).
+- Export PDF du rapport : par l'impression du navigateur (« Enregistrer au format PDF »), sans bibliothèque ni service tiers.
+- Pas de console d'administration (S4-ADMIN abandonné) : le second facteur TOTP n'est pas activé dans la démo.
 
 ## Écarts connus, à traiter à l'AUDIT
 
@@ -52,8 +63,10 @@ Dernière mise à jour : 12:55
 
 ## Version du serveur qui fonctionne
 
-- Edge Function Supabase « api », premier déploiement corrigé (12:45).
+- Edge Function Supabase « api », version fiabilisée IA (14:15).
 
 ## Prochaine commande
 
-- EXECUTE S3-CANDIDAT — à joindre (liens directs) : JOURNAL.md, js/commun/config.js, js/commun/ui.js, js/commun/api.js, css/styles.css. La CSP de index.html doit autoriser https://adkbmydcdkcdemmvzdiw.supabase.co.
+- PRESENTATION — textes de soumission, script de la vidéo de 90 s, pitch, déclaration d'utilisation de l'IA (Gemini + Claude).
+- 15:30 : gel du code, passage de CLE_GEMINI à la clé DEMO dans la table proprietes, tournage de la vidéo.
+- 16:15 : soumission.
