@@ -20,7 +20,7 @@
     URL_API: 'https://adkbmydcdkcdemmvzdiw.supabase.co/functions/v1/api',
     DELAI_MS: 30000,
     DELAI_LONG_MS: 90000,
-    ACTIONS_LONGUES: Object.freeze(['candidat.terminer', 'tests.evaluer', 'postes.generer']),
+    ACTIONS_LONGUES: Object.freeze(['candidat.terminer', 'candidat.repliquer', 'tests.evaluer', 'postes.generer']),
     ACTIONS_LECTURE: Object.freeze([
       'systeme.etat',
       'auth.prelogin',
