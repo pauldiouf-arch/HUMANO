@@ -5,319 +5,364 @@ const Totp = Object.freeze({
     let valeur = 0;
     let sortie = '';
     for (let i = 0; i < octets.length; i++) {
-      const b = octets[i] < 0 ? octets[i] + 256 : octets[i];
-      valeur = (valeur << 8) | b;
+      valeur = (valeur << 8) | (octets[i] & 0xff);
       bits += 8;
       while (bits >= 5) {
-        sortie += alphabet.charAt((valeur >>> (bits - 5)) & 31);
+        sortie += alphabet[(valeur >>> (bits - 5)) & 31];
         bits -= 5;
       }
     }
     if (bits > 0) {
-      sortie += alphabet.charAt((valeur << (5 - bits)) & 31);
+      sortie += alphabet[(valeur << (5 - bits)) & 31];
     }
     return sortie;
   },
   depuisBase32(chaine) {
-    const propre = String(chaine).toUpperCase().split('=').join('').split(' ').join('');
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const c = chaine.toUpperCase().replace(/=+$/, '').replace(/\s+/g, '');
     let bits = 0;
     let valeur = 0;
     const octets = [];
-    for (let i = 0; i < propre.length; i++) {
-      const idx = alphabet.indexOf(propre.charAt(i));
+    for (let i = 0; i < c.length; i++) {
+      const idx = alphabet.indexOf(c[i]);
       if (idx === -1) throw erreur('INVALIDE');
       valeur = (valeur << 5) | idx;
       bits += 5;
       if (bits >= 8) {
-        octets.push((valeur >>> (bits - 8)) & 255);
+        octets.push((valeur >>> (bits - 8)) & 0xff);
         bits -= 8;
       }
     }
     return octets;
   },
   nouveauSecret() {
-    const graine = Utilities.getUuid() + ':' + Utilities.getUuid() + ':' + Date.now();
-    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, graine, Utilities.Charset.UTF_8);
-    return Totp.versBase32(digest.slice(0, 20));
+    const octets = [];
+    for (let i = 0; i < 20; i++) {
+      octets.push(Math.floor(Math.random() * 256));
+    }
+    return Totp.versBase32(octets);
   },
   code(secretBase32, pas) {
     const cleOctets = Totp.depuisBase32(secretBase32);
-    const pasOctets = [0, 0, 0, 0, 0, 0, 0, 0];
+    const compteur = [];
     let p = pas;
     for (let i = 7; i >= 0; i--) {
-      pasOctets[i] = p & 0xff;
+      compteur[i] = p & 0xff;
       p = Math.floor(p / 256);
     }
-    const hmac = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_SHA_1, pasOctets, cleOctets);
-    const dernierOctet = hmac[hmac.length - 1];
-    const offset = (dernierOctet < 0 ? dernierOctet + 256 : dernierOctet) & 0x0f;
-    const b0 = (hmac[offset] < 0 ? hmac[offset] + 256 : hmac[offset]) & 0x7f;
-    const b1 = (hmac[offset + 1] < 0 ? hmac[offset + 1] + 256 : hmac[offset + 1]) & 0xff;
-    const b2 = (hmac[offset + 2] < 0 ? hmac[offset + 2] + 256 : hmac[offset + 2]) & 0xff;
-    const b3 = (hmac[offset + 3] < 0 ? hmac[offset + 3] + 256 : hmac[offset + 3]) & 0xff;
-    const binaire = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    const otp = (binaire % 1000000).toString();
-    return ('000000' + otp).slice(-6);
+    const signature = Utilities.computeHmacSha1Signature(compteur, cleOctets);
+    const offset = signature[signature.length - 1] & 0x0f;
+    const b0 = signature[offset] & 0x7f;
+    const b1 = signature[offset + 1] & 0xff;
+    const b2 = signature[offset + 2] & 0xff;
+    const b3 = signature[offset + 3] & 0xff;
+    const codeEntier = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) % 1000000;
+    return String(codeEntier).padStart(6, '0');
   },
-  verifier(secretBase32, codeSaisi, pasActuel) {
-    const codeNet = String(codeSaisi || '').trim();
-    if (codeNet.length !== 6) return false;
-    const props = PropertiesService.getScriptProperties();
-    const dernierPas = Number(props.getProperty('TOTP_DERNIER_PAS') || 0);
-    const pasBase = pasActuel !== undefined ? pasActuel : Math.floor(Date.now() / 1000 / 30);
-    for (let decalage = -1; decalage <= 1; decalage++) {
-      const p = pasBase + decalage;
-      if (p <= dernierPas) continue;
-      const attendu = Totp.code(secretBase32, p);
-      if (egaliteConstante(attendu, codeNet)) {
-        props.setProperty('TOTP_DERNIER_PAS', String(p));
-        return true;
+  verifier(secretBase32, codeSaisi, pasActuel, dernierPasUtilise) {
+    const pas = pasActuel !== undefined ? pasActuel : Math.floor(Date.now() / 30000);
+    const fenetres = [pas, pas - 1, pas + 1];
+    for (let i = 0; i < fenetres.length; i++) {
+      const f = fenetres[i];
+      if (dernierPasUtilise !== null && dernierPasUtilise !== undefined && f <= dernierPasUtilise) {
+        continue;
+      }
+      const attendu = Totp.code(secretBase32, f);
+      if (egaliteConstante(attendu, String(codeSaisi).trim())) {
+        return { valide: true, pas: f };
       }
     }
-    return false;
+    return { valide: false, pas: null };
   }
 });
 
 const Auth = Object.freeze({
   etat() {
     const props = PropertiesService.getScriptProperties();
-    const initialise = Boolean(props.getProperty('AUTH_HASH'));
+    const hash = props.getProperty('AUTH_HASH');
     const totpActif = props.getProperty('TOTP_ACTIF') === 'oui';
-    return { version: CONFIG.VERSION, initialise, totpActif };
+    return {
+      version: CONFIG.VERSION,
+      initialise: Boolean(hash),
+      totpActif: totpActif
+    };
   },
-  initialiser(donnees) {
-    Valider.objet(donnees);
-    const derive = Valider.texte(donnees.derive, 64, 64);
-    const sel = Valider.texte(donnees.sel, 32, 32);
+  initialiser(derive, sel) {
+    Valider.texte(derive, 64, 64);
+    Valider.texte(sel, 32, 32);
     return Stockage.avecVerrou(() => {
       const props = PropertiesService.getScriptProperties();
-      if (props.getProperty('AUTH_HASH')) throw erreur('ETAT');
+      if (props.getProperty('AUTH_HASH')) {
+        throw erreur('ETAT');
+      }
       const poivre = props.getProperty('POIVRE');
       if (!poivre) throw erreur('INTERNE');
-      const hash = sha256Hex(poivre + ':' + derive);
+      const authHash = sha256Hex(poivre + ':' + derive);
       props.setProperty('AUTH_SEL', sel);
-      props.setProperty('AUTH_HASH', hash);
-      Journal.ecrire('recruteur', 'auth.initialiser', 'systeme', 'Compte recruteur créé.');
+      props.setProperty('AUTH_HASH', authHash);
+      props.setProperty('TOTP_ACTIF', 'non');
+      props.setProperty('ECHECS', '0');
+      props.setProperty('VERROU_JUSQUA', '0');
+      Journal.ecrire('systeme', 'auth.initialiser', 'compte', 'Creation compte administrateur');
       return { initialise: true };
     });
   },
   prelogin() {
     const props = PropertiesService.getScriptProperties();
-    const sel = props.getProperty('AUTH_SEL') || '';
+    const sel = props.getProperty('AUTH_SEL');
+    if (!sel) throw erreur('ETAT');
     const totpActif = props.getProperty('TOTP_ACTIF') === 'oui';
-    return { sel, totpActif };
+    return { sel: sel, totpActif: totpActif };
   },
-  connexion(donnees) {
-    Valider.objet(donnees);
-    const derive = Valider.texte(donnees.derive, 64, 64);
-    const code = String(donnees.code || '').trim();
+  connexion(derive, code) {
+    Valider.texte(derive, 64, 64);
+    const props = PropertiesService.getScriptProperties();
+    const maintenant = Date.now();
+    const verrouJusqua = Number(props.getProperty('VERROU_JUSQUA') || '0');
+    if (maintenant < verrouJusqua) {
+      throw erreur('VERROUILLE');
+    }
+    const poivre = props.getProperty('POIVRE');
+    const attendu = props.getProperty('AUTH_HASH');
+    if (!poivre || !attendu) throw erreur('ETAT');
+    const calcule = sha256Hex(poivre + ':' + derive);
+    const mdpOk = egaliteConstante(calcule, attendu);
+    const totpActif = props.getProperty('TOTP_ACTIF') === 'oui';
+    let totpOk = true;
+    let nouveauPas = null;
+    if (totpActif) {
+      const secret = props.getProperty('TOTP_SECRET');
+      const dernier = Number(props.getProperty('TOTP_DERNIER_PAS') || '-1');
+      const res = Totp.verifier(secret, code || '', Math.floor(maintenant / 30000), dernier);
+      totpOk = res.valide;
+      nouveauPas = res.pas;
+    }
+    if (!md堅k || !totpOk) {
+      Auth.echec();
+      throw erreur('IDENTIFIANTS');
+    }
     return Stockage.avecVerrou(() => {
-      const props = PropertiesService.getScriptProperties();
-      const maintenant = Date.now();
-      const verrouJusqua = Number(props.getProperty('VERROU_JUSQUA') || 0);
-      if (maintenant < verrouJusqua) throw erreur('VERROUILLE');
-      const poivre = props.getProperty('POIVRE');
-      const attendu = props.getProperty('AUTH_HASH');
-      if (!poivre || !attendu) throw erreur('ETAT');
-      const calcule = sha256Hex(poivre + ':' + derive);
-      if (!egaliteConstante(attendu, calcule)) {
-        Auth.echec();
-        throw erreur('IDENTIFIANTS');
-      }
-      const totpActif = props.getProperty('TOTP_ACTIF') === 'oui';
-      if (totpActif) {
-        const secret = props.getProperty('TOTP_SECRET');
-        if (!secret || !Totp.verifier(secret, code)) {
-          Auth.echec();
-          throw erreur('IDENTIFIANTS');
-        }
-      }
       props.setProperty('ECHECS', '0');
-      const jeton = Auth.ouvrirSession();
-      Journal.ecrire('recruteur', 'auth.connexion', 'session', 'Connexion réussie.');
-      const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
-      const session = sessions[sha256Hex(jeton)];
+      if (totpActif && nouveauPas !== null) {
+        props.setProperty('TOTP_DERNIER_PAS', String(nouveauPas));
+      }
+      const sess = Auth.ouvrirSession();
+      Journal.ecrire('admin', 'auth.connexion', sess.jetonHash, 'Connexion reussie');
       return {
-        jeton,
-        expireLe: session ? session.expire : maintenantIso(),
+        jeton: sess.jeton,
+        expireLe: sess.expireLe,
         inactiviteMin: CONFIG.SESSION_INACTIVITE_MIN
       };
     });
   },
   echec() {
-    const props = PropertiesService.getScriptProperties();
-    const echecs = Number(props.getProperty('ECHECS') || 0) + 1;
-    if (echecs >= CONFIG.ECHECS_MAX) {
-      const verrouJusqua = Date.now() + CONFIG.VERROU_MIN * 60 * 1000;
-      props.setProperty('VERROU_JUSQUA', String(verrouJusqua));
-      props.setProperty('ECHECS', '0');
-      Journal.ecrire('anonyme', 'auth.verrouillage', 'securite', 'Compte verrouillé après 5 échecs.');
-    } else {
-      props.setProperty('ECHECS', String(echecs));
-      Journal.ecrire('anonyme', 'auth.echec', 'securite', 'Échec d\'authentification.');
-    }
+    Stockage.avecVerrou(() => {
+      const props = PropertiesService.getScriptProperties();
+      let echecs = Number(props.getProperty('ECHECS') || '0') + 1;
+      Journal.ecrire('inconnu', 'auth.echec', '', 'Tentative ' + echecs);
+      if (echecs >= CONFIG.ECHECS_MAX) {
+        const jusqua = Date.now() + CONFIG.VERROU_MIN * 60 * 1000;
+        props.setProperty('VERROU_JUSQUA', String(jusqua));
+        props.setProperty('ECHECS', '0');
+        Journal.ecrire('systeme', 'auth.verrouillage', '', 'Verrouillage 15 min');
+      } else {
+        props.setProperty('ECHECS', String(echecs));
+      }
+    });
   },
   ouvrirSession() {
     const jeton = jetonAleatoire();
-    const jetonHash = sha256Hex(jeton);
+    const hash = sha256Hex(jeton);
+    const maintenant = maintenantIso();
+    const expireDate = new Date(Date.now() + CONFIG.SESSION_DUREE_MAX_MIN * 60 * 1000).toISOString();
     const sessions = Auth.sessionsValides();
     const cles = Object.keys(sessions);
     if (cles.length >= CONFIG.SESSIONS_MAX) {
-      cles.sort((a, b) => new Date(sessions[a].activite) - new Date(sessions[b].activite));
+      cles.sort((a, b) => new Date(sessions[a].activite).getTime() - new Date(sessions[b].activite).getTime());
       delete sessions[cles[0]];
     }
-    const maintenant = new Date();
-    const expire = new Date(maintenant.getTime() + CONFIG.SESSION_DUREE_MAX_MIN * 60 * 1000).toISOString();
-    const activite = maintenant.toISOString();
-    sessions[jetonHash] = {
+    sessions[hash] = {
       id: genererId('s_'),
-      creeLe: activite,
-      activite,
-      expire
+      creeLe: maintenant,
+      activite: maintenant,
+      expire: expireDate
     };
     Stockage.ecrireProprieteJson('SESSIONS', sessions);
-    return jeton;
+    return { jeton: jeton, jetonHash: hash, expireLe: expireDate };
   },
   sessionsValides() {
-    const brutes = Stockage.lireProprieteJson('SESSIONS') || {};
-    const valides = {};
+    const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
     const maintenant = Date.now();
-    const limiteInactiviteMs = CONFIG.SESSION_INACTIVITE_MIN * 60 * 1000;
-    Object.keys(brutes).forEach((h) => {
-      const s = brutes[h];
-      const expireMs = new Date(s.expire).getTime();
-      const activiteMs = new Date(s.activite).getTime();
-      if (maintenant < expireMs && maintenant - activiteMs < limiteInactiviteMs) {
-        valides[h] = s;
+    const maxAgeMs = CONFIG.SESSION_DUREE_MAX_MIN * 60 * 1000;
+    const inactifMs = CONFIG.SESSION_INACTIVITE_MIN * 60 * 1000;
+    const valides = {};
+    let modifie = false;
+    for (const hash in sessions) {
+      const s = sessions[hash];
+      const cree = new Date(s.creeLe).getTime();
+      const act = new Date(s.activite).getTime();
+      if (maintenant - cree <= maxAgeMs && maintenant - act <= inactifMs) {
+        valides[hash] = s;
+      } else {
+        modifie = true;
       }
-    });
+    }
+    if (modifie) {
+      Stockage.ecrireProprieteJson('SESSIONS', valides);
+    }
     return valides;
   },
   verifierSession(jeton) {
-    if (!jeton || typeof jeton !== 'string' || jeton.length !== 64) {
+    if (!jeton) throw erreur('NON_AUTORISE');
+    const hash = sha256Hex(jeton);
+    const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
+    const sess = sessions[hash];
+    if (!sess) throw erreur('NON_AUTORISE');
+
+    const maintenantMs = Date.now();
+    const creeMs = new Date(sess.creeLe).getTime();
+    const actMs = new Date(sess.activite).getTime();
+    const maxAgeMs = CONFIG.SESSION_DUREE_MAX_MIN * 60 * 1000;
+    const inactifMs = CONFIG.SESSION_INACTIVITE_MIN * 60 * 1000;
+
+    if (maintenantMs - creeMs > maxAgeMs || maintenantMs - actMs > inactifMs) {
+      Stockage.avecVerrou(() => {
+        const fraiches = Stockage.lireProprieteJson('SESSIONS') || {};
+        if (fraiches[hash]) {
+          delete fraiches[hash];
+          Stockage.ecrireProprieteJson('SESSIONS', fraiches);
+        }
+      });
       throw erreur('NON_AUTORISE');
     }
-    return Stockage.avecVerrou(() => {
-      const jetonHash = sha256Hex(jeton);
-      const sessions = Auth.sessionsValides();
-      const session = sessions[jetonHash];
-      if (!session) {
-        Stockage.ecrireProprieteJson('SESSIONS', sessions);
-        throw erreur('NON_AUTORISE');
-      }
-      session.activite = maintenantIso();
-      sessions[jetonHash] = session;
-      Stockage.ecrireProprieteJson('SESSIONS', sessions);
-      return session;
-    });
+
+    if (maintenantMs - actMs > 60 * 1000) {
+      Stockage.avecVerrou(() => {
+        const fraiches = Stockage.lireProprieteJson('SESSIONS') || {};
+        const s = fraiches[hash];
+        if (s) {
+          s.activite = maintenantIso();
+          Stockage.ecrireProprieteJson('SESSIONS', fraiches);
+        }
+      });
+    }
+
+    return sess;
   },
   deconnexion(jeton) {
-    if (!jeton) return {};
-    return Stockage.avecVerrou(() => {
-      const jetonHash = sha256Hex(jeton);
-      const sessions = Auth.sessionsValides();
-      delete sessions[jetonHash];
-      Stockage.ecrireProprieteJson('SESSIONS', sessions);
-      Journal.ecrire('recruteur', 'auth.deconnexion', 'session', 'Déconnexion manuelle.');
-      return {};
+    if (!jeton) return;
+    const hash = sha256Hex(jeton);
+    Stockage.avecVerrou(() => {
+      const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
+      if (sessions[hash]) {
+        delete sessions[hash];
+        Stockage.ecrireProprieteJson('SESSIONS', sessions);
+        Journal.ecrire('admin', 'auth.deconnexion', hash, 'Deconnexion manuelle');
+      }
     });
   },
   listerSessions(jetonCourant) {
-    const jetonHash = sha256Hex(jetonCourant);
+    const hashCourant = jetonCourant ? sha256Hex(jetonCourant) : '';
     const sessions = Auth.sessionsValides();
-    return Object.keys(sessions).map((h) => {
+    const liste = [];
+    for (const h in sessions) {
       const s = sessions[h];
-      return {
+      liste.push({
         id: s.id,
         creeLe: s.creeLe,
         activite: s.activite,
-        courante: h === jetonHash
-      };
-    });
-  },
-  revoquer(donnees, jetonCourant) {
-    Valider.objet(donnees);
-    const id = Valider.texte(donnees.id, 1, 60);
-    return Stockage.avecVerrou(() => {
-      const jetonHash = sha256Hex(jetonCourant);
-      const sessions = Auth.sessionsValides();
-      let trouve = null;
-      Object.keys(sessions).forEach((h) => {
-        if (sessions[h].id === id) trouve = h;
+        courante: h === hashCourant
       });
+    }
+    liste.sort((a, b) => new Date(b.activite).getTime() - new Date(a.activite).getTime());
+    return liste;
+  },
+  revoquer(id, jetonCourant) {
+    Valider.texte(id, 1, 40);
+    const hashCourant = jetonCourant ? sha256Hex(jetonCourant) : '';
+    Stockage.avecVerrou(() => {
+      const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
+      let trouve = null;
+      for (const h in sessions) {
+        if (sessions[h].id === id) {
+          trouve = h;
+          break;
+        }
+      }
       if (!trouve) throw erreur('INTROUVABLE');
-      if (trouve === jetonHash) throw erreur('ETAT');
       delete sessions[trouve];
       Stockage.ecrireProprieteJson('SESSIONS', sessions);
-      Journal.ecrire('recruteur', 'auth.revoquer', id, 'Révocation d\'une session.');
-      return {};
+      Journal.ecrire('admin', 'auth.revoquer', id, 'Session revoquee');
+      if (trouve === hashCourant) {
+        throw erreur('NON_AUTORISE');
+      }
     });
   },
-  changerMotDePasse(donnees, jetonCourant) {
-    Valider.objet(donnees);
-    const ancienDerive = Valider.texte(donnees.ancienDerive, 64, 64);
-    const nouveauDerive = Valider.texte(donnees.nouveauDerive, 64, 64);
-    const nouveauSel = Valider.texte(donnees.nouveauSel, 32, 32);
-    return Stockage.avecVerrou(() => {
+  changerMotDePasse(ancienDerive, nouveauDerive, nouveauSel, jetonCourant) {
+    Valider.texte(ancienDerive, 64, 64);
+    Valider.texte(nouveauDerive, 64, 64);
+    Valider.texte(nouveauSel, 32, 32);
+    const hashCourant = jetonCourant ? sha256Hex(jetonCourant) : '';
+    Stockage.avecVerrou(() => {
       const props = PropertiesService.getScriptProperties();
       const poivre = props.getProperty('POIVRE');
       const hashActuel = props.getProperty('AUTH_HASH');
-      const calculeAncien = sha256Hex(poivre + ':' + ancienDerive);
-      if (!egaliteConstante(hashActuel, calculeAncien)) {
+      const testActuel = sha256Hex(poivre + ':' + ancienDerive);
+      if (!egaliteConstante(testActuel, hashActuel)) {
         throw erreur('IDENTIFIANTS');
       }
       const nouveauHash = sha256Hex(poivre + ':' + nouveauDerive);
       props.setProperty('AUTH_SEL', nouveauSel);
       props.setProperty('AUTH_HASH', nouveauHash);
-      const jetonHash = sha256Hex(jetonCourant);
-      const sessions = Auth.sessionsValides();
+      const sessions = Stockage.lireProprieteJson('SESSIONS') || {};
       const conservees = {};
-      if (sessions[jetonHash]) {
-        conservees[jetonHash] = sessions[jetonHash];
+      if (hashCourant && sessions[hashCourant]) {
+        conservees[hashCourant] = sessions[hashCourant];
       }
       Stockage.ecrireProprieteJson('SESSIONS', conservees);
-      Journal.ecrire('recruteur', 'auth.motDePasse', 'securite', 'Mot de passe modifié.');
-      return {};
+      Journal.ecrire('admin', 'auth.motDePasse', '', 'Changement mot de passe et revocation autres sessions');
     });
   },
   totpPreparer() {
-    const props = PropertiesService.getScriptProperties();
     const secret = Totp.nouveauSecret();
+    const props = PropertiesService.getScriptProperties();
     props.setProperty('TOTP_EN_ATTENTE', secret);
     const uri = 'otpauth://totp/HUMANO:recruteur?secret=' + secret + '&issuer=HUMANO&algorithm=SHA1&digits=6&period=30';
-    return { secret, uri };
+    return { secret: secret, uri: uri };
   },
-  totpActiver(donnees) {
-    Valider.objet(donnees);
-    const code = Valider.texte(donnees.code, 6, 6);
+  totpActiver(code) {
+    Valider.texte(code, 6, 6);
     return Stockage.avecVerrou(() => {
       const props = PropertiesService.getScriptProperties();
       const secret = props.getProperty('TOTP_EN_ATTENTE');
       if (!secret) throw erreur('ETAT');
-      if (!Totp.verifier(secret, code)) throw erreur('IDENTIFIANTS');
+      const res = Totp.verifier(secret, code);
+      if (!res.valide) throw erreur('IDENTIFIANTS');
       props.setProperty('TOTP_SECRET', secret);
       props.setProperty('TOTP_ACTIF', 'oui');
+      props.setProperty('TOTP_DERNIER_PAS', String(res.pas));
       props.deleteProperty('TOTP_EN_ATTENTE');
-      Journal.ecrire('recruteur', 'auth.totpActiver', 'securite', 'Second facteur activé.');
+      Journal.ecrire('admin', 'auth.totpActiver', '', 'Second facteur active');
       return { totpActif: true };
     });
   },
-  totpDesactiver(donnees) {
-    Valider.objet(donnees);
-    const derive = Valider.texte(donnees.derive, 64, 64);
-    const code = Valider.texte(donnees.code, 6, 6);
+  totpDesactiver(derive, code) {
+    Valider.texte(derive, 64, 64);
     return Stockage.avecVerrou(() => {
       const props = PropertiesService.getScriptProperties();
+      if (props.getProperty('TOTP_ACTIF') !== 'oui') throw erreur('ETAT');
       const poivre = props.getProperty('POIVRE');
-      const attendu = props.getProperty('AUTH_HASH');
-      const calcule = sha256Hex(poivre + ':' + derive);
-      if (!egaliteConstante(attendu, calcule)) throw erreur('IDENTIFIANTS');
+      const hashActuel = props.getProperty('AUTH_HASH');
+      const testActuel = sha256Hex(poivre + ':' + derive);
+      if (!egaliteConstante(testActuel, hashActuel)) throw erreur('IDENTIFIANTS');
       const secret = props.getProperty('TOTP_SECRET');
-      if (!secret || !Totp.verifier(secret, code)) throw erreur('IDENTIFIANTS');
+      const dernier = Number(props.getProperty('TOTP_DERNIER_PAS') || '-1');
+      const res = Totp.verifier(secret, code || '', Math.floor(Date.now() / 30000), dernier);
+      if (!res.valide) throw erreur('IDENTIFIANTS');
       props.setProperty('TOTP_ACTIF', 'non');
       props.deleteProperty('TOTP_SECRET');
-      Journal.ecrire('recruteur', 'auth.totpDesactiver', 'securite', 'Second facteur désactivé.');
+      props.deleteProperty('TOTP_DERNIER_PAS');
+      Journal.ecrire('admin', 'auth.totpDesactiver', '', 'Second facteur desactive');
       return { totpActif: false };
     });
   }
