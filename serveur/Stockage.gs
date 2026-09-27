@@ -41,7 +41,31 @@ const Stockage = Object.freeze({
     const valeurs = f.getRange(2, 1, n - 1, col).getValues();
     for (let i = 0; i < valeurs.length; i++) {
       if (String(valeurs[i][0]) === String(id)) {
-        return { indexLigne: i + 2, valeurs: valeurs[i] };
+        const indexLigne = i + 2;
+        const ligneValeurs = valeurs[i];
+        if (nom === FEUILLES.postes || nom === FEUILLES.tests || nom === 'postes' || nom === 'tests') {
+          const brute = ligneValeurs[ligneValeurs.length - 1];
+          try {
+            const obj = JSON.parse(brute);
+            if (obj && typeof obj === 'object') {
+              Object.defineProperty(obj, 'indexLigne', {
+                value: indexLigne,
+                writable: true,
+                enumerable: false,
+                configurable: true
+              });
+              Object.defineProperty(obj, 'valeurs', {
+                value: ligneValeurs,
+                writable: true,
+                enumerable: false,
+                configurable: true
+              });
+              return obj;
+            }
+          } catch (e) {
+          }
+        }
+        return { indexLigne: indexLigne, valeurs: ligneValeurs };
       }
     }
     return null;
