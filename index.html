@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://adkbmydcdkcdemmvzdiw.supabase.co; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HUMANO</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/commun/config.js" defer></script>
+  <script src="js/commun/ui.js" defer></script>
+  <script src="js/commun/api.js" defer></script>
+  <script src="js/candidat/anticheat.js" defer></script>
+  <script src="js/candidat/candidat.js" defer></script>
+</head>
+<body>
+  <a class="lien-evitement" href="#contenu">Aller au contenu</a>
+  <main id="contenu" class="conteneur">
+    <div id="message-global"></div>
+    <section class="ecran" id="ecran-candidat" hidden>
+      <h1 id="titre-candidat" tabindex="-1"></h1>
+      <div id="candidat-contenu"></div>
+    </section>
+    <section class="ecran" id="ecran-attente" hidden>
+      <h1 id="titre-attente" tabindex="-1">Veuillez patienter</h1>
+      <p id="attente-message" class="attente"></p>
+    </section>
+  </main>
+  <div id="annonce-polie" class="visuellement-cache" role="status" aria-live="polite"></div>
+  <div id="annonce-urgente" class="visuellement-cache" role="alert" aria-live="assertive"></div>
+  <dialog id="dialogue-confirmation" aria-labelledby="dialogue-message">
+    <p id="dialogue-message"></p>
+    <div class="actions">
+      <button type="button" id="dialogue-annuler" class="bouton">Annuler</button>
+      <button type="button" id="dialogue-ok" class="bouton-principal">Confirmer</button>
+    </div>
+  </dialog>
+</body>
+</html>
