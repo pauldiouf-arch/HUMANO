@@ -266,6 +266,11 @@
       texte: 'Se connecter'
     });
     actions.appendChild(boutonConnexion);
+    const lienOubli = HUMANO.ui.creer('button', { type: 'button', classe: 'lien-discret', texte: 'Mot de passe oublié ?' });
+    lienOubli.addEventListener('click', function () {
+      afficherFormulaireOubli(conteneur);
+    });
+    actions.appendChild(lienOubli);
     carte.appendChild(actions);
     conteneur.appendChild(carte);
 
@@ -330,8 +335,118 @@
     });
   }
 
+  function afficherFormulaireOubli(conteneur) {
+    const U = HUMANO.ui;
+    U.vider(conteneur);
+    const titre = document.getElementById('titre-connexion');
+    if (titre) titre.textContent = 'Mot de passe oublié';
+    const carte = U.creer('div', { classe: 'carte' });
+    carte.appendChild(U.creer('p', { classe: 'aide', texte: 'Saisissez votre identifiant et le code de secours généré dans Administration, Sécurité. Toutes les sessions ouvertes seront fermées.' }));
+    const champs = [
+      ['oubli-identifiant', 'Identifiant', { type: 'text', autocomplete: 'username', maxlength: '40', autocapitalize: 'none' }],
+      ['oubli-code', 'Code de secours', { type: 'text', autocomplete: 'off', autocapitalize: 'characters', maxlength: '30' }],
+      ['oubli-mdp', 'Nouveau mot de passe (12 caractères minimum)', { type: 'password', autocomplete: 'new-password' }],
+      ['oubli-confirmation', 'Confirmez le nouveau mot de passe', { type: 'password', autocomplete: 'new-password' }]
+    ];
+    const entrees = {};
+    champs.forEach(function (c) {
+      const div = U.creer('div', { classe: 'champ' });
+      div.appendChild(U.creer('label', { for: c[0], texte: c[1] }));
+      const input = U.creer('input', Object.assign({ id: c[0] }, c[2]));
+      div.appendChild(input);
+      carte.appendChild(div);
+      entrees[c[0]] = input;
+    });
+    const actions = U.creer('div', { classe: 'actions' });
+    const boutonValider = U.creer('button', { type: 'button', classe: 'bouton-principal', texte: 'Réinitialiser le mot de passe' });
+    const boutonRetour = U.creer('button', { type: 'button', classe: 'bouton', texte: 'Retour à la connexion' });
+    boutonRetour.addEventListener('click', function () {
+      afficherConnexion();
+    });
+    actions.appendChild(boutonValider);
+    actions.appendChild(boutonRetour);
+    carte.appendChild(actions);
+    conteneur.appendChild(carte);
+
+    const carteSignal = U.creer('div', { classe: 'carte' });
+    carteSignal.appendChild(U.creer('h2', { texte: 'Pas de code de secours ?' }));
+    carteSignal.appendChild(U.creer('p', { classe: 'aide', texte: 'Signalez l\'oubli à l\'administrateur de HUMANO : il sera averti sur son tableau de bord et pourra réinitialiser votre accès.' }));
+    const divMsg = U.creer('div', { classe: 'champ' });
+    divMsg.appendChild(U.creer('label', { for: 'oubli-message', texte: 'Message pour l\'administrateur (facultatif)' }));
+    const inputMsg = U.creer('textarea', { id: 'oubli-message', rows: '2', maxlength: '300' });
+    divMsg.appendChild(inputMsg);
+    carteSignal.appendChild(divMsg);
+    const actionsSignal = U.creer('div', { classe: 'actions' });
+    const boutonSignal = U.creer('button', { type: 'button', classe: 'bouton', texte: 'Signaler à l\'administrateur' });
+    actionsSignal.appendChild(boutonSignal);
+    carteSignal.appendChild(actionsSignal);
+    conteneur.appendChild(carteSignal);
+    boutonSignal.addEventListener('click', async function () {
+      boutonSignal.disabled = true;
+      try {
+        await HUMANO.api.appeler('auth.signalerOubli', {
+          identifiant: entrees['oubli-identifiant'].value.trim(),
+          message: inputMsg.value.trim()
+        });
+        U.vider(carteSignal);
+        carteSignal.appendChild(U.creer('h2', { texte: 'Demande envoyée' }));
+        carteSignal.appendChild(U.creer('p', { classe: 'aide', texte: 'L\'administrateur a été averti. Il vous recontactera pour réinitialiser votre accès.' }));
+        U.annoncer('Demande envoyée à l\'administrateur.');
+      } catch (err) {
+        boutonSignal.disabled = false;
+        U.afficherMessage(err.message || 'Envoi impossible.', 'erreur');
+      }
+    });
+    entrees['oubli-identifiant'].focus();
+
+    boutonValider.addEventListener('click', async function () {
+      Object.keys(entrees).forEach(function (k) { U.lierErreur(entrees[k], null); });
+      const mdp = entrees['oubli-mdp'].value;
+      if (!entrees['oubli-identifiant'].value.trim()) {
+        U.lierErreur(entrees['oubli-identifiant'], 'Saisissez votre identifiant.');
+        return;
+      }
+      if (!entrees['oubli-code'].value.trim()) {
+        U.lierErreur(entrees['oubli-code'], 'Saisissez votre code de secours.');
+        return;
+      }
+      if (mdp.length < HUMANO.config.MOT_DE_PASSE_MIN || MOTS_DE_PASSE_COURANTS.indexOf(mdp.toLowerCase()) !== -1) {
+        U.lierErreur(entrees['oubli-mdp'], 'Choisissez un mot de passe robuste d\'au moins 12 caractères.');
+        return;
+      }
+      if (mdp !== entrees['oubli-confirmation'].value) {
+        U.lierErreur(entrees['oubli-confirmation'], 'Les deux mots de passe ne correspondent pas.');
+        return;
+      }
+      boutonValider.disabled = true;
+      boutonValider.textContent = 'Réinitialisation…';
+      try {
+        const sel = genererSelHex();
+        const derive = await deriverMotDePasse(mdp, sel);
+        await HUMANO.api.appeler('auth.reinitialiser', {
+          identifiant: entrees['oubli-identifiant'].value.trim(),
+          code: entrees['oubli-code'].value.trim(),
+          nouveauDerive: derive,
+          nouveauSel: sel
+        });
+        U.afficherMessage('Mot de passe réinitialisé. Connectez-vous, puis générez un nouveau code de secours.', 'succes');
+        afficherConnexion();
+      } catch (err) {
+        boutonValider.disabled = false;
+        boutonValider.textContent = 'Réinitialiser le mot de passe';
+        if (err.code === 'IDENTIFIANTS') {
+          U.lierErreur(entrees['oubli-code'], 'Identifiant ou code de secours incorrect.');
+        } else {
+          U.afficherMessage(err.message || 'Réinitialisation impossible.', 'erreur');
+        }
+      }
+    });
+  }
+
   function afficherConnexion() {
     HUMANO.ui.afficherEcran('ecran-connexion', 'Connexion');
+    const titreConnexion = document.getElementById('titre-connexion');
+    if (titreConnexion) titreConnexion.textContent = 'Connexion';
     const conteneur = document.getElementById('conteneur-auth');
     if (!conteneur) return;
     if (!etatSysteme.initialise) {

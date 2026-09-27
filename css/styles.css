@@ -1249,3 +1249,31 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 h1[tabindex="-1"]:focus {
   outline: none;
 }
+
+.lien-discret {
+  background: none;
+  border: none;
+  color: var(--texte-doux);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: 10px 4px;
+  margin-left: auto;
+}
+
+.lien-discret:hover {
+  color: var(--texte);
+}
+
+.code-secours {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+  padding: var(--e3) var(--e4);
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  background-color: var(--accent-doux);
+  text-align: center;
+}

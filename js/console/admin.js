@@ -161,6 +161,26 @@
     }
     conteneur.appendChild(c2);
 
+    const cS = carte('Code de secours');
+    cS.appendChild(el('p', { classe: 'aide', texte: 'En cas d\'oubli du mot de passe, ce code permet de le réinitialiser depuis l\'écran de connexion. Il ne sert qu\'une fois et n\'est affiché qu\'une seule fois : notez-le et gardez-le hors de l\'ordinateur. En générer un nouveau invalide l\'ancien.' }));
+    const zoneCode = el('div');
+    cS.appendChild(zoneCode);
+    const aS = el('div', { classe: 'actions' });
+    aS.appendChild(bouton('Générer un code de secours', 'bouton', async function () {
+      const ok = await H.ui.confirmer('Générer un nouveau code de secours ? L\'ancien ne fonctionnera plus.', 'Générer', 'Annuler');
+      if (!ok) return;
+      const r = await H.api.appeler('auth.codeSecours', null);
+      H.ui.vider(zoneCode);
+      zoneCode.appendChild(el('p', { classe: 'code-secours', texte: r.code }));
+      zoneCode.appendChild(el('p', { classe: 'aide', texte: 'Notez ce code maintenant : il ne sera plus jamais affiché.' }));
+    }));
+    aS.appendChild(bouton('Marquer les demandes d\'oubli comme traitées', 'bouton', async function () {
+      await H.api.appeler('auth.traiterOubli', null);
+      H.ui.afficherMessage('Demandes marquées comme traitées.', 'succes');
+    }));
+    cS.appendChild(aS);
+    conteneur.appendChild(cS);
+
     const sessions = await H.api.appeler('auth.sessions', null);
     const c3 = carte('Sessions actives');
     c3.appendChild(tableau('Sessions ouvertes sur la console', ['Ouverte le', 'Dernière activité', 'Action'], sessions.map(function (s) {
@@ -248,15 +268,25 @@
 
     const reg = await H.api.appeler('admin.registre', null);
     const c2 = carte('Registre des traitements');
-    const dl = el('dl', { classe: 'definitions' });
-    [['responsable', 'Responsable'], ['finalite', 'Finalité'], ['baseLegale', 'Base légale'], ['donnees', 'Données traitées'], ['destinataires', 'Destinataires'], ['conservation', 'Conservation'], ['droits', 'Droits des personnes'], ['securite', 'Sécurité']].forEach(function (k) {
-      if (!reg[k[0]]) return;
-      dl.appendChild(el('dt', { texte: k[1] }));
-      dl.appendChild(el('dd', { texte: reg[k[0]] }));
+    c2.appendChild(el('p', { classe: 'aide', texte: 'Adaptez chaque rubrique à votre organisation. Le registre est conservé et chaque modification est inscrite au journal d\'audit.' }));
+    const RUBRIQUES = [['responsable', 'Responsable du traitement'], ['finalite', 'Finalité'], ['baseLegale', 'Base légale'], ['donnees', 'Données traitées'], ['destinataires', 'Destinataires et sous-traitants'], ['conservation', 'Durée de conservation'], ['droits', 'Droits des personnes'], ['securite', 'Mesures de sécurité']];
+    RUBRIQUES.forEach(function (k) {
+      const bloc = el('div', { classe: 'champ' });
+      bloc.appendChild(el('label', { for: 'registre-' + k[0], texte: k[1] }));
+      const zone = el('textarea', { id: 'registre-' + k[0], rows: '2', maxlength: '600' });
+      zone.value = reg[k[0]] || '';
+      bloc.appendChild(zone);
+      c2.appendChild(bloc);
     });
-    dl.appendChild(el('dt', { texte: 'Version de la notice' }));
-    dl.appendChild(el('dd', { texte: H.config.VERSION_NOTICE || '2026-09-27' }));
-    c2.appendChild(dl);
+    c2.appendChild(el('p', { classe: 'aide', texte: 'Version de la notice candidat : ' + (H.config.VERSION_NOTICE || '2026-09-27') }));
+    const a2 = el('div', { classe: 'actions' });
+    a2.appendChild(bouton('Enregistrer le registre', 'bouton-principal', async function () {
+      const valeurs = {};
+      RUBRIQUES.forEach(function (k) { valeurs[k[0]] = valeur('registre-' + k[0]); });
+      await H.api.appeler('admin.registreEnregistrer', valeurs);
+      H.ui.afficherMessage('Registre des traitements enregistré.', 'succes');
+    }));
+    c2.appendChild(a2);
     conteneur.appendChild(c2);
   }
 
