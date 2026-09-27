@@ -66,6 +66,9 @@
 
   function majBandeau(etat) {
     etatTest = etat;
+    if (etat && etat.finPrevue && elementChrono && etat.finPrevue !== finPrevueAffichee) {
+      demarrerChronoGlobal(etat.finPrevue);
+    }
     if (jaugeBloc && etat && typeof etat.stress === 'number') {
       const nomPersona = (donneesEpreuves && donneesEpreuves.simulation && donneesEpreuves.simulation.nomCourt)
         ? donneesEpreuves.simulation.nomCourt
@@ -114,12 +117,15 @@
     minuterieFlash = setInterval(tick, 1000);
   }
 
+  let finPrevueAffichee = null;
+
   function demarrerChronoGlobal(finPrevueIso) {
     if (minuterieChronoGlobal) {
       clearInterval(minuterieChronoGlobal);
       minuterieChronoGlobal = null;
     }
     annoncesChronoPassees = {};
+    finPrevueAffichee = finPrevueIso;
     const finTemps = new Date(finPrevueIso).getTime();
 
     function tick() {
@@ -228,7 +234,7 @@
     contenu.parentNode.insertBefore(bandeau, contenu);
     window.HUMANO.ui.suivreBandeau(bandeau);
 
-    if (etatTest && etatTest.finPrevue && donneesPoste && !donneesPoste.sansChrono) {
+    if (etatTest && etatTest.finPrevue) {
       demarrerChronoGlobal(etatTest.finPrevue);
     }
     if (etatTest) {
@@ -263,9 +269,8 @@
         texte: 'Données collectées : prénom, nom, réponses, horodatages et signaux d\'intégrité.'
       }),
       window.HUMANO.ui.creer('p', {
-        texte: 'Destinataires : le recruteur et les sous-traitants techniques Google (hébergement, Sheets, ' +
-          'API Gemini en offre gratuite, qui peut utiliser les contenus pour améliorer ses services ; ' +
-          'n\'inscrivez aucune donnée sensible).'
+        texte: 'Destinataires : le recruteur et nos sous-traitants techniques (hébergement et intelligence ' +
+          'artificielle), détaillés dans la politique de confidentialité. N\'inscrivez aucune donnée sensible.'
       }),
       window.HUMANO.ui.creer('p', {
         texte: 'Durée de conservation : ' + infos.conservationJours + ' jours, puis suppression automatique.'
@@ -278,8 +283,17 @@
       }),
       window.HUMANO.ui.creer('p', {
         texte: 'Règles du test : collage désactivé, sorties de page détectées (+20 de stress), ' +
-          'chrono global et, sauf aménagement, un événement de 30 s.'
-      })
+          'chrono global et, sauf aménagement, un événement de 30 s. Le temps de réponse de l\'IA ' +
+          'n\'est pas décompté de votre temps.'
+      }),
+      window.HUMANO.ui.creer('p', {}, [
+        window.HUMANO.ui.creer('a', {
+          href: 'confidentialite.html',
+          target: '_blank',
+          rel: 'noopener',
+          texte: 'Lire la politique de confidentialité et les conditions d\'utilisation (nouvel onglet)'
+        })
+      ])
     ]);
     conteneur.appendChild(carteNotice);
 
