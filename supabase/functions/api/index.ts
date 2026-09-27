@@ -130,6 +130,11 @@ function genererId(prefixe: string): string {
   return prefixe + crypto.randomUUID().replace(/-/g, '').slice(0, 12).toLowerCase();
 }
 
+function normaliserIdentifiant(v: unknown): string {
+  if (typeof v !== 'string') return '';
+  return v.trim().toLowerCase().normalize('NFC').slice(0, 40);
+}
+
 function egaliteConstante(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   let diff = a.length ^ b.length;
@@ -498,6 +503,7 @@ const Auth = Object.freeze({
     ctxCourant.proprietes.set('AUTH_HASH', authHash);
     ctxCourant.proprietesModifiees.set('AUTH_SEL', sel);
     ctxCourant.proprietesModifiees.set('AUTH_HASH', authHash);
+    Auth.memoriserIdentifiant(donnees.identifiant);
     Journal.ecrire('admin', 'auth.initialisation', 'compte', 'Création du mot de passe administrateur');
     return { initialise: true };
   },
@@ -507,7 +513,7 @@ const Auth = Object.freeze({
     const totp = ctxCourant.proprietes.get('TOTP_ACTIF') === 'oui';
     return { sel, totpActif: totp };
   },
-  connexion(donnees: Record<string, unknown>): { jeton: string; expireLe: string; inactiviteMin: number } {
+  connexion(donnees: Record<string, unknown>): { jeton: string; expireLe: string; inactiviteMin: number; nom: string } {
     if (!ctxCourant) throw erreur('INTERNE');
     const verrouJusqua = Number(ctxCourant.proprietes.get('VERROU_JUSQUA') || 0);
     if (Date.now() < verrouJusqua) throw erreur('VERROUILLE');
@@ -516,7 +522,10 @@ const Auth = Object.freeze({
     const poivre = ctxCourant.proprietes.get('POIVRE') || '';
     const attendu = ctxCourant.proprietes.get('AUTH_HASH') || '';
     const calcule = sha256Hex(poivre + ':' + derive);
-    if (!attendu || !egaliteConstante(attendu, calcule)) {
+    const identifiantAttendu = ctxCourant.proprietes.get('IDENTIFIANT') || '';
+    const identifiantSaisi = normaliserIdentifiant(donnees.identifiant);
+    const identifiantOk = !identifiantAttendu || egaliteConstante(sha256Hex(identifiantAttendu), sha256Hex(identifiantSaisi));
+    if (!attendu || !egaliteConstante(attendu, calcule) || !identifiantOk) {
       Auth.echec();
       throw erreur('IDENTIFIANTS');
     }
@@ -530,9 +539,76 @@ const Auth = Object.freeze({
     }
     ctxCourant.proprietes.set('ECHECS', '0');
     ctxCourant.proprietesModifiees.set('ECHECS', '0');
+    if (!identifiantAttendu && identifiantSaisi) Auth.memoriserIdentifiant(donnees.identifiant);
     const sessionRes = Auth.ouvrirSession();
     Journal.ecrire(sessionRes.id, 'auth.connexion', 'compte', 'Connexion réussie');
-    return { jeton: sessionRes.jeton, expireLe: sessionRes.expireLe, inactiviteMin: CONFIG.SESSION_INACTIVITE_MIN };
+    return { jeton: sessionRes.jeton, expireLe: sessionRes.expireLe, inactiviteMin: CONFIG.SESSION_INACTIVITE_MIN, nom: ctxCourant.proprietes.get('NOM_AFFICHE') || '' };
+  },
+  genererCodeSecours(sessionCourante: Session): { code: string } {
+    if (!ctxCourant) throw erreur('INTERNE');
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const octets = new Uint8Array(20);
+    crypto.getRandomValues(octets);
+    const brut = Array.from(octets).map((o) => alphabet[o % alphabet.length]).join('');
+    const code = brut.match(/.{1,5}/g)!.join('-');
+    const poivre = ctxCourant.proprietes.get('POIVRE') || '';
+    const empreinte = sha256Hex(poivre + ':secours:' + brut);
+    ctxCourant.proprietes.set('CODE_SECOURS_HASH', empreinte);
+    ctxCourant.proprietesModifiees.set('CODE_SECOURS_HASH', empreinte);
+    Journal.ecrire(sessionCourante.id, 'auth.code_secours', 'compte', 'Nouveau code de secours généré (l\'ancien est invalidé)');
+    return { code };
+  },
+  reinitialiser(donnees: Record<string, unknown>): { reinitialise: boolean } {
+    if (!ctxCourant) throw erreur('INTERNE');
+    const verrouJusqua = Number(ctxCourant.proprietes.get('VERROU_JUSQUA') || 0);
+    if (Date.now() < verrouJusqua) throw erreur('VERROUILLE');
+    const nouveauDerive = Valider.texte(donnees.nouveauDerive, 64, true);
+    const nouveauSel = Valider.texte(donnees.nouveauSel, 32, true);
+    if (!/^[0-9a-f]{64}$/.test(nouveauDerive) || !/^[0-9a-f]{32}$/.test(nouveauSel)) throw erreur('INVALIDE');
+    const code = String(donnees.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 40);
+    const poivre = ctxCourant.proprietes.get('POIVRE') || '';
+    const attendu = ctxCourant.proprietes.get('CODE_SECOURS_HASH') || '';
+    const identifiantAttendu = ctxCourant.proprietes.get('IDENTIFIANT') || '';
+    const identifiantOk = !identifiantAttendu || egaliteConstante(sha256Hex(identifiantAttendu), sha256Hex(normaliserIdentifiant(donnees.identifiant)));
+    if (!attendu || !identifiantOk || !egaliteConstante(attendu, sha256Hex(poivre + ':secours:' + code))) {
+      Auth.echec();
+      throw erreur('IDENTIFIANTS');
+    }
+    const authHash = sha256Hex(poivre + ':' + nouveauDerive);
+    [['AUTH_SEL', nouveauSel], ['AUTH_HASH', authHash], ['CODE_SECOURS_HASH', ''], ['ECHECS', '0']].forEach(([k, v]) => {
+      ctxCourant!.proprietes.set(k, v);
+      ctxCourant!.proprietesModifiees.set(k, v);
+    });
+    Stockage.ecrireProprieteJson('SESSIONS', {});
+    Journal.ecrire('visiteur', 'auth.reinitialisation', 'compte', 'Mot de passe réinitialisé avec le code de secours ; toutes les sessions fermées');
+    return { reinitialise: true };
+  },
+  signalerOubli(donnees: Record<string, unknown>): { signale: boolean } {
+    if (!ctxCourant) throw erreur('INTERNE');
+    const demandes = Stockage.lireProprieteJson<Array<{ date: string; identifiant: string; message: string }>>('DEMANDES_OUBLI', []);
+    const derniere = demandes.length ? new Date(demandes[demandes.length - 1].date).getTime() : 0;
+    if (Date.now() - derniere < 5 * 60 * 1000) return { signale: true };
+    const identifiant = Valider.texte(donnees.identifiant, 40, false);
+    const message = Valider.texte(donnees.message, 300, false);
+    demandes.push({ date: maintenantIso(), identifiant, message });
+    Stockage.ecrireProprieteJson('DEMANDES_OUBLI', demandes.slice(-10));
+    Journal.ecrire('visiteur', 'auth.demande_reinitialisation', 'compte', 'Mot de passe oublié signalé' + (identifiant ? ' pour « ' + identifiant + ' »' : '') + (message ? ' : ' + message : ''));
+    return { signale: true };
+  },
+  traiterOubli(sessionCourante: Session): Record<string, never> {
+    Stockage.ecrireProprieteJson('DEMANDES_OUBLI', []);
+    Journal.ecrire(sessionCourante.id, 'auth.demande_traitee', 'compte', 'Demandes de réinitialisation marquées comme traitées');
+    return {};
+  },
+  memoriserIdentifiant(brut: unknown): void {
+    if (!ctxCourant) return;
+    const id = normaliserIdentifiant(brut);
+    if (!id) return;
+    const nom = String(brut).trim().slice(0, 40);
+    ctxCourant.proprietes.set('IDENTIFIANT', id);
+    ctxCourant.proprietesModifiees.set('IDENTIFIANT', id);
+    ctxCourant.proprietes.set('NOM_AFFICHE', nom);
+    ctxCourant.proprietesModifiees.set('NOM_AFFICHE', nom);
   },
   echec(): void {
     if (!ctxCourant) return;
@@ -989,7 +1065,8 @@ const PROMPT_EVALUATION = [
   '5. Pour chaque question technique, note sur 5 selon les critères attendus et commente en une phrase. Accepte toute réponse équivalente et correcte (formule écrite autrement, fonctions en anglais ou en français, séparateur ; ou , , autre méthode aboutissant au bon résultat) : ce sont le résultat et la démarche qui comptent, pas la forme exacte.',
   '6. Mentionne factuellement dans points_vigilance les sorties de page, collages bloqués ou insertions suspectes, sans conclure à une fraude certaine.',
   '7. synthese : 3 phrases au maximum, avec une recommandation claire (poursuivre, approfondir en entretien, ou ne pas retenir).',
-  '8. Rédige en français professionnel.'
+  '8. Rédige en français professionnel.',
+  '9. Équité : n\'évalue que les compétences demandées. Ne tiens compte ni du genre, ni de l\'âge, ni de l\'origine, ni de la religion, ni d\'un handicap. Ne pénalise pas l\'orthographe, les tournures locales ou quelques mots de wolof, sauf si la qualité rédactionnelle est une compétence recherchée.'
 ].join('\n');
 
 function donneesEvaluation(poste: any, test: any): string {
@@ -1977,6 +2054,61 @@ const Candidat = Object.freeze({
   }
 });
 
+const TableauBord = Object.freeze({
+  obtenir(): any {
+    if (!ctxCourant) throw erreur('INTERNE');
+    fermerTestsExpirersPassifs();
+    const postes = Stockage.lignes(FEUILLES.POSTES).map((lp) => JSON.parse(lp[4]));
+    const tests = Stockage.lignes(FEUILLES.TESTS).map((lt) => JSON.parse(lt[6]));
+    const intitule = (pid: string) => (postes.find((p) => p.id === pid) || { intitule: 'Poste supprimé' }).intitule;
+    const nomCandidat = (t: any) => (t.candidat ? (t.candidat.prenom + ' ' + String(t.candidat.nom || '').slice(0, 1) + '.') : 'Candidat');
+    const parDate = (a: string, b: string) => String(b || '').localeCompare(String(a || ''));
+
+    const postesRecents = postes.slice().sort((a, b) => parDate(a.majLe, b.majLe)).slice(0, 5).map((p) => {
+      const tp = tests.filter((t) => t.posteId === p.id);
+      return { id: p.id, intitule: p.intitule, statut: p.statut, majLe: p.majLe, nbTests: tp.length, nbEvalues: tp.filter((t) => t.statut === 'evalue').length };
+    });
+    const testsRecents = tests.slice().sort((a, b) => parDate(a.debut, b.debut)).slice(0, 6).map((t) => ({
+      id: t.id, candidat: nomCandidat(t), poste: intitule(t.posteId), statut: t.statut, debut: t.debut,
+      note: t.evaluation ? t.evaluation.note_finale : null
+    }));
+
+    const alertes: Array<{ niveau: string; texte: string; lien: string; date: string }> = [];
+    tests.forEach((t) => {
+      if (t.statut === 'termine') alertes.push({ niveau: 'action', texte: 'Le test de ' + nomCandidat(t) + ' (' + intitule(t.posteId) + ') attend son évaluation.', lien: '#/tests/' + t.id, date: t.fin || t.debut });
+      const sorties = t.infractions && Array.isArray(t.infractions.sorties) ? t.infractions.sorties.length : 0;
+      if (sorties >= 2) alertes.push({ niveau: 'vigilance', texte: nomCandidat(t) + ' a quitté la page ' + sorties + ' fois pendant son test.', lien: '#/tests/' + t.id, date: t.debut });
+      const secours = Array.isArray(t.echanges) ? t.echanges.filter((e: any) => e.secours).length : 0;
+      if (secours > 0) alertes.push({ niveau: 'info', texte: 'L\'IA a été indisponible ' + secours + ' fois pendant le test de ' + nomCandidat(t) + ' : répliques de secours non évaluées.', lien: '#/tests/' + t.id, date: t.debut });
+      if (t.statut === 'en_cours') alertes.push({ niveau: 'info', texte: nomCandidat(t) + ' passe actuellement le test « ' + intitule(t.posteId) + ' ».', lien: '#/tests/' + t.id, date: t.debut });
+    });
+    Stockage.lireProprieteJson<Array<{ date: string; identifiant: string; message: string }>>('DEMANDES_OUBLI', []).forEach((dm) => {
+      alertes.push({ niveau: 'action', texte: 'Mot de passe oublié signalé' + (dm.identifiant ? ' pour « ' + dm.identifiant + ' »' : '') + (dm.message ? ' : ' + dm.message : '') + '. Réinitialisez l\'accès puis marquez la demande comme traitée.', lien: '#/admin/securite', date: dm.date });
+    });
+    const depuis = new Date(Date.now() - 86400000).toISOString();
+    const echecs = Journal.lister('auth.').filter((j) => (j.action === 'auth.echec' || j.action === 'auth.verrouillage') && j.horodatage >= depuis);
+    if (echecs.length > 0) alertes.push({ niveau: 'vigilance', texte: echecs.length + ' tentative(s) de connexion échouée(s) au cours des dernières 24 heures.', lien: '#/admin/journal', date: echecs[0].horodatage });
+    if (!ctxCourant.proprietes.get('CLE_GEMINI')) alertes.push({ niveau: 'action', texte: 'Le service d\'IA n\'est pas configuré : les mises en situation ne fonctionneront pas.', lien: '#/admin/parametres', date: maintenantIso() });
+    if (ctxCourant.proprietes.get('TOTP_ACTIF') !== 'oui') alertes.push({ niveau: 'info', texte: 'Le second facteur de connexion n\'est pas activé.', lien: '#/admin/securite', date: '' });
+    const ordre: Record<string, number> = { action: 0, vigilance: 1, info: 2 };
+    alertes.sort((a, b) => (ordre[a.niveau] - ordre[b.niveau]) || parDate(a.date, b.date));
+
+    return {
+      nom: ctxCourant.proprietes.get('NOM_AFFICHE') || '',
+      compteurs: {
+        postesOuverts: postes.filter((p) => p.statut === 'ouvert').length,
+        postesTotal: postes.length,
+        testsEnCours: tests.filter((t) => t.statut === 'en_cours').length,
+        aEvaluer: tests.filter((t) => t.statut === 'termine').length,
+        evalues: tests.filter((t) => t.statut === 'evalue').length
+      },
+      postesRecents,
+      testsRecents,
+      alertes: alertes.slice(0, 12)
+    };
+  }
+});
+
 const Rgpd = Object.freeze({
   lireParametres(): any {
     return Stockage.lireProprieteJson<any>('PARAMETRES', {
@@ -2036,13 +2168,28 @@ const Rgpd = Object.freeze({
     return res;
   },
   registre(): any {
+    const defaut = Rgpd.registreDefaut();
+    const enregistre = Stockage.lireProprieteJson<any>('REGISTRE', {});
+    const resultat: any = {};
+    Object.keys(defaut).forEach((k) => { resultat[k] = typeof enregistre[k] === 'string' && enregistre[k] ? enregistre[k] : defaut[k]; });
+    return resultat;
+  },
+  enregistrerRegistre(donnees: Record<string, unknown>, sessionCourante: Session): any {
+    const defaut = Rgpd.registreDefaut();
+    const valeurs: any = {};
+    Object.keys(defaut).forEach((k) => { valeurs[k] = Valider.texte(donnees[k], 600, false); });
+    Stockage.ecrireProprieteJson('REGISTRE', valeurs);
+    Journal.ecrire(sessionCourante.id, 'rgpd.registre', 'registre', 'Registre des traitements mis à jour');
+    return Rgpd.registre();
+  },
+  registreDefaut(): any {
     const params = Rgpd.lireParametres();
     return {
       responsable: 'Recruteur administrateur de HUMANO',
       finalite: 'Évaluation des compétences de candidats lors du recrutement',
       baseLegale: 'Consentement explicite du candidat (art. 6 RGPD et loi n° 2008-12)',
       donnees: 'Prénom, nom, réponses aux tests, signaux d\'intégrité (sorties, collages)',
-      destinataires: 'Recruteur, sous-traitant technique Google (Gemini API)',
+      destinataires: 'Recruteur ; sous-traitants techniques : Supabase (hébergement et base de données), GitHub Pages (pages web), Google (API Gemini)',
       conservation: (params.conservationJours || CONFIG.CONSERVATION_DEFAUT_JOURS) + ' jours après passation',
       droits: 'Accès, rectification, effacement et portabilité via le recruteur',
       securite: 'Journal chaîné SHA-256, isolation des prompts, chiffrement des secrets'
@@ -2108,6 +2255,11 @@ const ACTIONS: Record<string, { public: boolean; exec: (donnees: any, session?: 
   'auth.totpPreparer': { public: false, exec: () => Auth.totpPreparer() },
   'auth.totpActiver': { public: false, exec: (d, s) => Auth.totpActiver(d.code, s) },
   'auth.totpDesactiver': { public: false, exec: (d, s) => Auth.totpDesactiver(d, s) },
+  'auth.codeSecours': { public: false, exec: (_d, s) => Auth.genererCodeSecours(s) },
+  'auth.reinitialiser': { public: true, exec: (d) => Auth.reinitialiser(d) },
+  'auth.signalerOubli': { public: true, exec: (d) => Auth.signalerOubli(d) },
+  'auth.traiterOubli': { public: false, exec: (_d, s) => Auth.traiterOubli(s) },
+  'admin.registreEnregistrer': { public: false, exec: (d, s) => Rgpd.enregistrerRegistre(d, s) },
   'postes.modeles': { public: false, exec: () => Postes.modeles() },
   'postes.depuisModele': { public: false, exec: (d) => Postes.depuisModele(d.modeleId) },
   'postes.generer': { public: false, exec: (d) => Postes.generer(d) },
@@ -2121,6 +2273,7 @@ const ACTIONS: Record<string, { public: boolean; exec: (donnees: any, session?: 
   'tests.evaluer': { public: false, exec: (d, s) => Tests.evaluer(d.id, s) },
   'tests.supprimer': { public: false, exec: (d, s) => Tests.supprimer(d.id, s) },
   'tests.exporter': { public: false, exec: (d, s) => Tests.exporter(d.id, s) },
+  'tableau.bord': { public: false, exec: () => TableauBord.obtenir() },
   'admin.journal': { public: false, exec: (d) => Journal.lister(d.action) },
   'admin.journalVerifier': { public: false, exec: () => Journal.verifier() },
   'admin.journalCsv': { public: false, exec: () => ({ csv: Journal.exporterCsv() }) },
