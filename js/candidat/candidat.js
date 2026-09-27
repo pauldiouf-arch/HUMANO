@@ -851,8 +851,45 @@
     conteneur.appendChild(carte);
   }
 
+  function afficherAccueilPublic() {
+    const U = window.HUMANO.ui;
+    U.afficherEcran('ecran-candidat', 'Accueil');
+    document.body.classList.add('page-accueil');
+    const titreH1 = document.getElementById('titre-candidat');
+    titreH1.textContent = 'L\'étape test du recrutement, vue autrement.';
+    const conteneur = document.getElementById('candidat-contenu');
+    U.vider(conteneur);
+    conteneur.appendChild(U.creer('p', {
+      classe: 'accueil-sous-titre',
+      texte: 'HUMANO fait passer aux candidats un test construit pour le poste : un questionnaire, des questions de métier et une mise en situation réaliste jouée par l\'IA. Le recruteur reçoit un rapport clair, qu\'il relit et confirme en entretien.'
+    }));
+    const grille = U.creer('div', { classe: 'grille-2' });
+    const carteRecruteur = U.creer('div', { classe: 'carte carte-choix' }, [
+      U.creer('p', { classe: 'surtitre', texte: 'Vous recrutez' }),
+      U.creer('h2', { texte: 'Espace recruteur' }),
+      U.creer('p', { classe: 'aide', texte: 'Créez un poste, partagez le lien ou le QR code, lisez les rapports.' })
+    ]);
+    const lienConsole = U.creer('a', { href: 'console.html', classe: 'bouton-principal', texte: 'Accéder à la console' });
+    carteRecruteur.appendChild(U.creer('div', { classe: 'actions' }, [lienConsole]));
+    const carteCandidat = U.creer('div', { classe: 'carte carte-choix' }, [
+      U.creer('p', { classe: 'surtitre', texte: 'Vous êtes candidat' }),
+      U.creer('h2', { texte: 'Passer un test' }),
+      U.creer('p', { classe: 'aide', texte: 'Ouvrez le lien ou scannez le QR code transmis par le recruteur : votre test démarre directement.' })
+    ]);
+    grille.appendChild(carteRecruteur);
+    grille.appendChild(carteCandidat);
+    conteneur.appendChild(grille);
+    conteneur.appendChild(U.creer('p', { classe: 'aide pied-accueil' }, [
+      U.creer('a', { href: 'confidentialite.html', texte: 'Confidentialité et conditions d\'utilisation' })
+    ]));
+  }
+
   function initialiser() {
     jetonPosteActuel = extraireJetonPoste();
+    if (!jetonPosteActuel && !window.location.hash.replace(/^#\/?/, '').trim()) {
+      afficherAccueilPublic();
+      return;
+    }
     if (!jetonPosteActuel) {
       window.HUMANO.ui.afficherEcran('ecran-candidat', 'Lien invalide');
       const titreH1 = document.getElementById('titre-candidat');

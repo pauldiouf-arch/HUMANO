@@ -6,6 +6,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HUMANO — Console de recrutement</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
   <script src="js/lib/qrcode.js" integrity="sha384-e9EFD6BGC90bkW9aDV5xbbBfzwN7G8YImHao2lfLVKV/hPB0E0go+H3I64h7oHtA" defer></script>
   <script src="js/commun/config.js" defer></script>
@@ -15,23 +16,44 @@
   <script src="js/console/postes.js" defer></script>
   <script src="js/console/tests.js" defer></script>
   <script src="js/console/admin.js" defer></script>
+  <script src="js/console/accueil.js" defer></script>
   <script src="js/console/main.js" defer></script>
 </head>
 <body>
   <a class="lien-evitement" href="#contenu">Aller au contenu</a>
   <header class="entete" id="entete-console">
-    <span class="marque">HUMANO</span>
+    <a class="marque" href="#/accueil"><img src="img/logo.svg" alt="" width="32" height="32"><span>HUMANO</span></a>
     <nav class="navigation" id="navigation-console" aria-label="Navigation principale" hidden>
+      <a href="#/accueil" id="lien-nav-accueil">Tableau de bord <span class="pastille" id="pastille-alertes" hidden></span></a>
       <a href="#/postes" id="lien-nav-postes">Postes</a>
       <a href="#/admin/securite" id="lien-nav-admin">Administration</a>
+      <span class="utilisateur" id="nav-utilisateur"></span>
       <button type="button" id="bouton-nav-deconnexion" class="bouton">Se déconnecter</button>
     </nav>
   </header>
   <main id="contenu" class="conteneur console-large">
     <div id="message-global"></div>
-    <section class="ecran" id="ecran-connexion" hidden>
-      <h1 tabindex="-1" id="titre-connexion">Connexion</h1>
-      <div id="conteneur-auth"></div>
+    <section class="ecran ecran-connexion" id="ecran-connexion" hidden>
+      <div class="connexion-grille">
+        <div class="connexion-marque">
+          <img src="img/logo.svg" alt="" width="64" height="64">
+          <p class="surtitre">Espace recruteur</p>
+          <p class="connexion-accroche">L'étape test du recrutement, vue autrement.</p>
+          <ul class="connexion-points">
+            <li>Des épreuves construites pour le poste, en quelques minutes.</li>
+            <li>Une mise en situation réaliste, jouée par l'IA.</li>
+            <li>Un rapport clair, relu par vous, jamais une décision automatique.</li>
+          </ul>
+        </div>
+        <div class="connexion-formulaire">
+          <h1 tabindex="-1" id="titre-connexion">Connexion</h1>
+          <div id="conteneur-auth"></div>
+        </div>
+      </div>
+    </section>
+    <section class="ecran" id="ecran-accueil" hidden>
+      <h1 tabindex="-1" id="titre-accueil">Tableau de bord</h1>
+      <div id="conteneur-accueil"></div>
     </section>
     <section class="ecran" id="ecran-postes" hidden>
       <h1 tabindex="-1" id="titre-postes">Postes</h1>

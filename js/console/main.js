@@ -56,6 +56,21 @@
     nav.hidden = !connecte;
 
     const hash = window.location.hash || '#/connexion';
+    const lienAccueil = document.getElementById('lien-nav-accueil');
+    if (lienAccueil) {
+      if (hash.startsWith('#/accueil')) lienAccueil.setAttribute('aria-current', 'page');
+      else lienAccueil.removeAttribute('aria-current');
+    }
+    const zoneNom = document.getElementById('nav-utilisateur');
+    if (zoneNom) {
+      let nom = '';
+      try {
+        nom = window.sessionStorage.getItem('humano.nom') || '';
+      } catch (e) {
+        nom = '';
+      }
+      zoneNom.textContent = nom;
+    }
     const lienPostes = document.getElementById('lien-nav-postes');
     const lienAdmin = document.getElementById('lien-nav-admin');
 
@@ -90,10 +105,15 @@
 
     if (hash === '#/connexion') {
       if (jeton) {
-        window.location.hash = '#/postes';
+        window.location.hash = '#/accueil';
         return;
       }
       HUMANO.auth.afficherConnexion();
+      return;
+    }
+
+    if (hash === '#/accueil') {
+      await HUMANO.accueil.afficher();
       return;
     }
 
@@ -148,7 +168,7 @@
       return;
     }
 
-    window.location.hash = jeton ? '#/postes' : '#/connexion';
+    window.location.hash = jeton ? '#/accueil' : '#/connexion';
   }
 
   async function demarrer() {
