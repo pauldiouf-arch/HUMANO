@@ -10,6 +10,29 @@
 
 ---
 
+## Accès pour le jury
+
+**Essayer comme candidat (sans compte) :** [LIEN DU POSTE « Démo jury »]
+Ouvrez le lien sur un téléphone ou un ordinateur, acceptez la notice, puis passez le QCM, les questions et la **mise en situation avec l'IA** (environ 15 minutes).
+
+**Console recruteur :** https://pauldiouf-arch.github.io/HUMANO/console.html
+
+| Identifiant | Mot de passe |
+|---|---|
+| [IDENTIFIANT] | [MOT DE PASSE DE DÉMO] |
+
+> **Note de sécurité.** Publier des identifiants dans un dépôt public n'est **pas une bonne pratique**. Nous le faisons ici uniquement pour que le jury puisse évaluer le MVP. Ce compte est un **compte de démonstration** :
+> - il ne contient que des données fictives ;
+> - son mot de passe est propre à la démo et n'est utilisé nulle part ailleurs ;
+> - il sera changé après l'évaluation ;
+> - un code de secours à usage unique, conservé hors ligne, permet de le récupérer à tout moment.
+>
+> En production, chaque recruteur disposera de son propre compte, avec invitation par e-mail, second facteur obligatoire et réinitialisation par lien à usage unique. Les mécanismes de sécurité du MVP sont décrits aux §2.2 et §7.
+>
+> Merci de ne pas modifier le mot de passe ni supprimer les tests existants, pour que les autres membres du jury puissent aussi évaluer le projet.
+
+---
+
 ## 1. Le problème
 
 Au Sénégal, un poste au contact du client (agent de comptoir, conseiller, assistant financier) reçoit des dizaines de CV qui se ressemblent. Dans une PME ou une ONG, une seule personne trie, teste et reçoit. Les tests en ligne existants sont génériques, souvent en anglais, et ne mesurent pas ce qui compte le plus sur ces postes : la réaction face à un client mécontent ou à une situation de crise. On le découvre souvent après l'embauche.
@@ -233,12 +256,12 @@ Le fichier `JOURNAL.md`, à la racine du dépôt, enregistre :
 
 Il sert de mémoire quand une conversation avec l'IA devient trop longue : on ouvre une nouvelle conversation, on lui donne le journal, et elle reprend exactement où l'on en était. Il ne contient jamais ni clé, ni mot de passe, ni donnée de candidat.
 
-### 5.5 Role de l'ia GEMINI 3.8 Flash
+### 5.5 Deux IA, deux rôles
 
-- (Google AI Studio) a produit le code, lot par lot, à partir de la spécification.
-- Puis a joué le rôle de développeur senior dans l'équipe :
-  - il a relu chaque livraison ;
-  - il l'a testée avec des scénarios automatisés (base de données et IA simulées, rendu des écrans dans un navigateur automatisé) ;
+- **Gemini** (Google AI Studio) a produit le code, lot par lot, à partir de la spécification.
+- **Claude** (Anthropic) a joué le rôle de développeur senior dans l'équipe :
+  - il a **relu** chaque livraison ;
+  - il l'a **testée** avec des scénarios automatisés (base de données et IA simulées, rendu des écrans dans un navigateur automatisé) ;
   - il a écrit directement, quand le temps manquait :
     - le portage vers Supabase ;
     - la page de confidentialité ;
