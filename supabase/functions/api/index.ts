@@ -1,4 +1,3 @@
-```ts
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createHash, createHmac } from 'node:crypto';
 
@@ -2028,16 +2027,8 @@ const CORS_HEADERS = {
   'Content-Type': 'application/json'
 };
 
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  ctxCourant = {
+function nouveauContexte(): ContexteStockage {
+  return {
     proprietes: new Map(),
     proprietesModifiees: new Map(),
     proprietesSupprimees: new Set(),
@@ -2052,118 +2043,134 @@ Deno.serve(async (req: Request) => {
     journal: [],
     journalInserts: []
   };
+}
 
+async function charger(supabase: any): Promise<void> {
+  const [resProp, resPostes, resTests, resJournal] = await Promise.all([
+    supabase.from('proprietes').select('cle, valeur'),
+    supabase.from('postes').select('id, statut, creeLe, majLe, donnees'),
+    supabase.from('tests').select('id, posteId, statut, debut, finPrevue, jetonHash, donnees'),
+    supabase.from('journal').select('horodatage, acteur, action, cible, detail, empreinte').order('n', { ascending: true })
+  ]);
+  if (resProp.error || resPostes.error || resTests.error || resJournal.error) throw erreur('INTERNE');
+  (resProp.data || []).forEach((r: any) => ctxCourant!.proprietes.set(r.cle, r.valeur));
+  ctxCourant!.postes = (resPostes.data || []).map((r: any) => [r.id, r.statut, r.creeLe, r.majLe, r.donnees]);
+  ctxCourant!.tests = (resTests.data || []).map((r: any) => [r.id, r.posteId, r.statut, r.debut, r.finPrevue, r.jetonHash, r.donnees]);
+  ctxCourant!.journal = (resJournal.data || []).map((r: any) => [r.horodatage, r.acteur, r.action, r.cible, r.detail, r.empreinte]);
+  if (!ctxCourant!.proprietes.has('POIVRE')) {
+    installer();
+  }
+}
+
+async function enregistrer(supabase: any): Promise<void> {
+  const ctx = ctxCourant!;
+  if (ctx.proprietesSupprimees.size > 0) {
+    const { error } = await supabase.from('proprietes').delete().in('cle', Array.from(ctx.proprietesSupprimees));
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.proprietesModifiees.size > 0) {
+    const upserts = Array.from(ctx.proprietesModifiees.entries()).map(([cle, valeur]) => ({ cle, valeur }));
+    const { error } = await supabase.from('proprietes').upsert(upserts);
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.postesDeletes.size > 0) {
+    const { error } = await supabase.from('postes').delete().in('id', Array.from(ctx.postesDeletes));
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.postesInserts.length > 0) {
+    const inserts = ctx.postesInserts.map((r) => ({ id: r[0], statut: r[1], creeLe: r[2], majLe: r[3], donnees: r[4] }));
+    const { error } = await supabase.from('postes').insert(inserts);
+    if (error) throw erreur('INTERNE');
+  }
+  for (const [id, r] of ctx.postesUpdates.entries()) {
+    const { error } = await supabase.from('postes').update({ statut: r[1], creeLe: r[2], majLe: r[3], donnees: r[4] }).eq('id', id);
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.testsDeletes.size > 0) {
+    const { error } = await supabase.from('tests').delete().in('id', Array.from(ctx.testsDeletes));
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.testsInserts.length > 0) {
+    const inserts = ctx.testsInserts.map((r) => ({ id: r[0], posteId: r[1], statut: r[2], debut: r[3], finPrevue: r[4], jetonHash: r[5], donnees: r[6] }));
+    const { error } = await supabase.from('tests').insert(inserts);
+    if (error) throw erreur('INTERNE');
+  }
+  for (const [id, r] of ctx.testsUpdates.entries()) {
+    const { error } = await supabase.from('tests').update({ posteId: r[1], statut: r[2], debut: r[3], finPrevue: r[4], jetonHash: r[5], donnees: r[6] }).eq('id', id);
+    if (error) throw erreur('INTERNE');
+  }
+  if (ctx.journalInserts.length > 0) {
+    const inserts = ctx.journalInserts.map((r) => ({ horodatage: r[0], acteur: r[1], action: r[2], cible: r[3], detail: r[4], empreinte: r[5] }));
+    const { error } = await supabase.from('journal').insert(inserts);
+    if (error) throw erreur('INTERNE');
+  }
+}
+
+function reponse(corps: unknown): Response {
+  return new Response(JSON.stringify(corps), { status: 200, headers: CORS_HEADERS });
+}
+
+function reponseErreur(code: string): Response {
+  const message = MESSAGES_ERREUR[code as keyof typeof MESSAGES_ERREUR] || MESSAGES_ERREUR.INTERNE;
+  return reponse({ ok: false, erreur: { code, message } });
+}
+
+async function traiter(req: Request, supabase: any): Promise<Response> {
+  ctxCourant = nouveauContexte();
+  let charge = false;
   try {
-    const { data: propRows, error: errProp } = await supabase.from('proprietes').select('cle, valeur');
-    if (errProp) throw erreur('INTERNE');
-    (propRows || []).forEach((r: any) => ctxCourant!.proprietes.set(r.cle, r.valeur));
-
-    if (!ctxCourant.proprietes.has('POIVRE')) {
-      installer();
-    }
-
-    const { data: postesRows, error: errP } = await supabase.from('postes').select('id, statut, creeLe, majLe, donnees');
-    if (errP) throw erreur('INTERNE');
-    ctxCourant.postes = (postesRows || []).map((r: any) => [r.id, r.statut, r.creeLe, r.majLe, r.donnees]);
-
-    const { data: testsRows, error: errT } = await supabase.from('tests').select('id, posteId, statut, debut, finPrevue, jetonHash, donnees');
-    if (errT) throw erreur('INTERNE');
-    ctxCourant.tests = (testsRows || []).map((r: any) => [r.id, r.posteId, r.statut, r.debut, r.finPrevue, r.jetonHash, r.donnees]);
-
-    const { data: jourRows, error: errJ } = await supabase.from('journal').select('horodatage, acteur, action, cible, detail, empreinte').order('n', { ascending: true });
-    if (errJ) throw erreur('INTERNE');
-    ctxCourant.journal = (jourRows || []).map((r: any) => [r.horodatage, r.acteur, r.action, r.cible, r.detail, r.empreinte]);
-
     const rawBody = await req.text();
     if (rawBody.length > CONFIG.TAILLE_MAX_REQUETE) throw erreur('INVALIDE');
-
     let bodyJson: any;
     try {
       bodyJson = JSON.parse(rawBody);
     } catch {
       throw erreur('INVALIDE');
     }
-
+    if (!bodyJson || typeof bodyJson !== 'object' || Array.isArray(bodyJson)) throw erreur('INVALIDE');
     const cles = Object.keys(bodyJson);
     if (cles.length !== 3 || !cles.includes('action') || !cles.includes('jeton') || !cles.includes('donnees')) {
       throw erreur('INVALIDE');
     }
-
-    const actionNom = bodyJson.action;
-    const def = ACTIONS[actionNom];
+    const def = ACTIONS[bodyJson.action];
     if (!def) throw erreur('INVALIDE');
+
+    await charger(supabase);
+    charge = true;
 
     let session: Session | undefined;
     if (!def.public) {
       session = Auth.verifierSession(bodyJson.jeton);
     }
-
-    const donneesParam = bodyJson.donnees ?? {};
-    const resultat = await def.exec(donneesParam, session);
-
-    // Enregistrement atomique des modifications en base
-    if (ctxCourant.proprietesSupprimees.size > 0) {
-      const arr = Array.from(ctxCourant.proprietesSupprimees);
-      const { error } = await supabase.from('proprietes').delete().in('cle', arr);
-      if (error) throw erreur('INTERNE');
-    }
-    if (ctxCourant.proprietesModifiees.size > 0) {
-      const upserts = Array.from(ctxCourant.proprietesModifiees.entries()).map(([cle, valeur]) => ({ cle, valeur }));
-      const { error } = await supabase.from('proprietes').upsert(upserts);
-      if (error) throw erreur('INTERNE');
-    }
-
-    if (ctxCourant.postesDeletes.size > 0) {
-      const arr = Array.from(ctxCourant.postesDeletes);
-      const { error } = await supabase.from('postes').delete().in('id', arr);
-      if (error) throw erreur('INTERNE');
-    }
-    if (ctxCourant.postesInserts.length > 0) {
-      const inserts = ctxCourant.postesInserts.map((r) => ({ id: r[0], statut: r[1], creeLe: r[2], majLe: r[3], donnees: r[4] }));
-      const { error } = await supabase.from('postes').insert(inserts);
-      if (error) throw erreur('INTERNE');
-    }
-    if (ctxCourant.postesUpdates.size > 0) {
-      for (const [id, r] of ctxCourant.postesUpdates.entries()) {
-        const { error } = await supabase.from('postes').update({ statut: r[1], creeLe: r[2], majLe: r[3], donnees: r[4] }).eq('id', id);
-        if (error) throw erreur('INTERNE');
-      }
-    }
-
-    if (ctxCourant.testsDeletes.size > 0) {
-      const arr = Array.from(ctxCourant.testsDeletes);
-      const { error } = await supabase.from('tests').delete().in('id', arr);
-      if (error) throw erreur('INTERNE');
-    }
-    if (ctxCourant.testsInserts.length > 0) {
-      const inserts = ctxCourant.testsInserts.map((r) => ({ id: r[0], posteId: r[1], statut: r[2], debut: r[3], finPrevue: r[4], jetonHash: r[5], donnees: r[6] }));
-      const { error } = await supabase.from('tests').insert(inserts);
-      if (error) throw erreur('INTERNE');
-    }
-    if (ctxCourant.testsUpdates.size > 0) {
-      for (const [id, r] of ctxCourant.testsUpdates.entries()) {
-        const { error } = await supabase.from('tests').update({ posteId: r[1], statut: r[2], debut: r[3], finPrevue: r[4], jetonHash: r[5], donnees: r[6] }).eq('id', id);
-        if (error) throw erreur('INTERNE');
-      }
-    }
-
-    if (ctxCourant.journalInserts.length > 0) {
-      const inserts = ctxCourant.journalInserts.map((r) => ({ horodatage: r[0], acteur: r[1], action: r[2], cible: r[3], detail: r[4], empreinte: r[5] }));
-      const { error } = await supabase.from('journal').insert(inserts);
-      if (error) throw erreur('INTERNE');
-    }
-
-    return new Response(JSON.stringify({ ok: true, donnees: resultat }), {
-      status: 200,
-      headers: CORS_HEADERS
-    });
+    const resultat = await def.exec(bodyJson.donnees ?? {}, session);
+    await enregistrer(supabase);
+    return reponse({ ok: true, donnees: resultat });
   } catch (err: any) {
     const code = err instanceof ErreurHumano ? err.code : 'INTERNE';
-    const message = MESSAGES_ERREUR[code as keyof typeof MESSAGES_ERREUR] || MESSAGES_ERREUR.INTERNE;
-    return new Response(JSON.stringify({ ok: false, erreur: { code, message } }), {
-      status: 200,
-      headers: CORS_HEADERS
-    });
+    if (charge && err instanceof ErreurHumano) {
+      try {
+        await enregistrer(supabase);
+      } catch {
+        return reponseErreur('INTERNE');
+      }
+    }
+    return reponseErreur(code);
+  } finally {
+    ctxCourant = null;
   }
+}
+
+let fileAttente: Promise<unknown> = Promise.resolve();
+
+Deno.serve((req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  if (req.method !== 'POST') {
+    return reponseErreur('INVALIDE');
+  }
+  const supabase = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+  const resultat = fileAttente.then(() => traiter(req, supabase));
+  fileAttente = resultat.catch(() => undefined);
+  return resultat;
 });
-```
