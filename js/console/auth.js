@@ -1,0 +1,329 @@
+'use strict';
+
+(function () {
+  let etatSysteme = { initialise: true, totpActif: false };
+
+  const MOTS_DE_PASSE_COURANTS = Object.freeze([
+    '123456789012',
+    'password1234',
+    'motdepasse12',
+    'administrateur',
+    'azertyuiop12',
+    'qwertyuiop12',
+    'superadmin12',
+    'bienvenue123',
+    'passerelle12',
+    'soleildakar1',
+    'secret123456',
+    'azerty123456',
+    'motdepasse123',
+    'welcome12345',
+    'administrateur1',
+    'changeit1234',
+    'masterkey123',
+    'access123456',
+    'complexpass1',
+    'monmotdepasse'
+  ]);
+
+  function octetsVersHex(tampon) {
+    const octets = new Uint8Array(tampon);
+    let hex = '';
+    for (let i = 0; i < octets.length; i += 1) {
+      hex += octets[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+  }
+
+  function hexVersOctets(hex) {
+    const longueur = hex.length / 2;
+    const octets = new Uint8Array(longueur);
+    for (let i = 0; i < longueur; i += 1) {
+      octets[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return octets;
+  }
+
+  async function deriverMotDePasse(motDePasse, selHex) {
+    const encodeur = new TextEncoder();
+    const cleBrute = await window.crypto.subtle.importKey(
+      'raw',
+      encodeur.encode(motDePasse),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const selOctets = hexVersOctets(selHex);
+    const bits = await window.crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: selOctets,
+        iterations: HUMANO.config.ITERATIONS_PBKDF2,
+        hash: 'SHA-256'
+      },
+      cleBrute,
+      256
+    );
+    return octetsVersHex(bits);
+  }
+
+  function genererSelHex() {
+    const octets = new Uint8Array(16);
+    window.crypto.getRandomValues(octets);
+    return octetsVersHex(octets.buffer);
+  }
+
+  function evaluerForce(mdp) {
+    if (!mdp || mdp.length < HUMANO.config.MOT_DE_PASSE_MIN) {
+      return { niveau: 'faible', libelle: 'Faible' };
+    }
+    let score = 0;
+    if (mdp.length >= 16) score += 1;
+    if (/[A-Z]/.test(mdp)) score += 1;
+    if (/[a-z]/.test(mdp)) score += 1;
+    if (/[0-9]/.test(mdp)) score += 1;
+    if (/[^A-Za-z0-9]/.test(mdp)) score += 1;
+
+    if (score >= 4) {
+      return { niveau: 'solide', libelle: 'Solide' };
+    }
+    if (score >= 2) {
+      return { niveau: 'correct', libelle: 'Correct' };
+    }
+    return { niveau: 'faible', libelle: 'Faible' };
+  }
+
+  function enregistrerEtatSysteme(etat) {
+    if (etat && typeof etat === 'object') {
+      etatSysteme = {
+        initialise: Boolean(etat.initialise),
+        totpActif: Boolean(etat.totpActif)
+      };
+    }
+  }
+
+  function afficherFormulaireCreation(conteneur) {
+    HUMANO.ui.vider(conteneur);
+
+    const carte = HUMANO.ui.creer('div', { classe: 'carte' });
+    const pIntro = HUMANO.ui.creer('p', {
+      classe: 'aide',
+      texte: 'Aucun mot de passe maître n\'est encore configuré. Créez le mot de passe de la console.'
+    });
+    carte.appendChild(pIntro);
+
+    const divMdp = HUMANO.ui.creer('div', { classe: 'champ' });
+    const labelMdp = HUMANO.ui.creer('label', { for: 'auth-creation-mdp', texte: 'Mot de passe maître' });
+    const inputMdp = HUMANO.ui.creer('input', {
+      id: 'auth-creation-mdp',
+      type: 'password',
+      autocomplete: 'new-password'
+    });
+    const aideForce = HUMANO.ui.creer('p', {
+      id: 'auth-creation-force',
+      classe: 'aide',
+      texte: 'Force : en attente de saisie (au moins 12 caractères).'
+    });
+    divMdp.appendChild(labelMdp);
+    divMdp.appendChild(inputMdp);
+    divMdp.appendChild(aideForce);
+    carte.appendChild(divMdp);
+
+    const divConf = HUMANO.ui.creer('div', { classe: 'champ' });
+    const labelConf = HUMANO.ui.creer('label', {
+      for: 'auth-creation-confirmation',
+      texte: 'Confirmez le mot de passe'
+    });
+    const inputConf = HUMANO.ui.creer('input', {
+      id: 'auth-creation-confirmation',
+      type: 'password',
+      autocomplete: 'new-password'
+    });
+    divConf.appendChild(labelConf);
+    divConf.appendChild(inputConf);
+    carte.appendChild(divConf);
+
+    const actions = HUMANO.ui.creer('div', { classe: 'actions' });
+    const boutonValider = HUMANO.ui.creer('button', {
+      type: 'button',
+      id: 'auth-bouton-creer',
+      classe: 'bouton-principal',
+      texte: 'Créer le mot de passe'
+    });
+    actions.appendChild(boutonValider);
+    carte.appendChild(actions);
+    conteneur.appendChild(carte);
+
+    inputMdp.addEventListener('input', function () {
+      const mdp = inputMdp.value;
+      const force = evaluerForce(mdp);
+      aideForce.textContent = 'Force : ' + force.libelle + (mdp.length < 12 ? ' (au moins 12 caractères requis).' : '.');
+      HUMANO.ui.lierErreur(inputMdp, null);
+    });
+
+    boutonValider.addEventListener('click', async function () {
+      const mdp = inputMdp.value;
+      const conf = inputConf.value;
+
+      HUMANO.ui.lierErreur(inputMdp, null);
+      HUMANO.ui.lierErreur(inputConf, null);
+
+      if (mdp.length < HUMANO.config.MOT_DE_PASSE_MIN) {
+        HUMANO.ui.lierErreur(inputMdp, 'Le mot de passe doit comporter au moins 12 caractères.');
+        inputMdp.focus();
+        return;
+      }
+      if (MOTS_DE_PASSE_COURANTS.indexOf(mdp.toLowerCase()) !== -1) {
+        HUMANO.ui.lierErreur(inputMdp, 'Ce mot de passe est trop courant. Choisissez un mot de passe plus robuste.');
+        inputMdp.focus();
+        return;
+      }
+      if (mdp !== conf) {
+        HUMANO.ui.lierErreur(inputConf, 'Les deux mots de passe ne correspondent pas.');
+        inputConf.focus();
+        return;
+      }
+
+      boutonValider.disabled = true;
+      boutonValider.textContent = 'Initialisation…';
+
+      try {
+        const sel = genererSelHex();
+        const derive = await deriverMotDePasse(mdp, sel);
+        await HUMANO.api.appeler('auth.initialiser', { derive: derive, sel: sel });
+        etatSysteme.initialise = true;
+        HUMANO.ui.afficherMessage('Mot de passe créé avec succès. Vous pouvez maintenant vous connecter.', 'succes');
+        afficherConnexion();
+      } catch (err) {
+        HUMANO.ui.afficherMessage(err.message || 'Impossible d\'initialiser le mot de passe.', 'erreur');
+        boutonValider.disabled = false;
+        boutonValider.textContent = 'Créer le mot de passe';
+      }
+    });
+  }
+
+  function afficherFormulaireConnexion(conteneur) {
+    HUMANO.ui.vider(conteneur);
+
+    const carte = HUMANO.ui.creer('div', { classe: 'carte' });
+
+    const divMdp = HUMANO.ui.creer('div', { classe: 'champ' });
+    const labelMdp = HUMANO.ui.creer('label', { for: 'auth-connexion-mdp', texte: 'Mot de passe' });
+    const inputMdp = HUMANO.ui.creer('input', {
+      id: 'auth-connexion-mdp',
+      type: 'password',
+      autocomplete: 'current-password'
+    });
+    divMdp.appendChild(labelMdp);
+    divMdp.appendChild(inputMdp);
+    carte.appendChild(divMdp);
+
+    let inputCode = null;
+    if (etatSysteme.totpActif) {
+      const divCode = HUMANO.ui.creer('div', { classe: 'champ' });
+      const labelCode = HUMANO.ui.creer('label', {
+        for: 'auth-connexion-code',
+        texte: 'Code à 6 chiffres (authentificateur)'
+      });
+      inputCode = HUMANO.ui.creer('input', {
+        id: 'auth-connexion-code',
+        type: 'text',
+        inputmode: 'numeric',
+        pattern: '[0-9]*',
+        maxlength: '6',
+        autocomplete: 'one-time-code'
+      });
+      divCode.appendChild(labelCode);
+      divCode.appendChild(inputCode);
+      carte.appendChild(divCode);
+    }
+
+    const actions = HUMANO.ui.creer('div', { classe: 'actions' });
+    const boutonConnexion = HUMANO.ui.creer('button', {
+      type: 'button',
+      id: 'auth-bouton-connexion',
+      classe: 'bouton-principal',
+      texte: 'Se connecter'
+    });
+    actions.appendChild(boutonConnexion);
+    carte.appendChild(actions);
+    conteneur.appendChild(carte);
+
+    boutonConnexion.addEventListener('click', async function () {
+      const mdp = inputMdp.value;
+      const code = inputCode ? inputCode.value.trim() : '';
+
+      HUMANO.ui.lierErreur(inputMdp, null);
+      if (inputCode) HUMANO.ui.lierErreur(inputCode, null);
+
+      if (!mdp) {
+        HUMANO.ui.lierErreur(inputMdp, 'Saisissez votre mot de passe.');
+        inputMdp.focus();
+        return;
+      }
+      if (etatSysteme.totpActif && (!code || code.length !== 6)) {
+        HUMANO.ui.lierErreur(inputCode, 'Saisissez le code à 6 chiffres.');
+        inputCode.focus();
+        return;
+      }
+
+      boutonConnexion.disabled = true;
+      boutonConnexion.textContent = 'Vérification…';
+
+      try {
+        const prelogin = await HUMANO.api.appeler('auth.prelogin', null);
+        etatSysteme.totpActif = Boolean(prelogin.totpActif);
+        const derive = await deriverMotDePasse(mdp, prelogin.sel);
+        const rep = await HUMANO.api.appeler('auth.connexion', {
+          derive: derive,
+          code: code
+        });
+        HUMANO.api.definirJeton(rep.jeton);
+        HUMANO.main.majNavigation();
+        HUMANO.ui.annoncer('Connexion réussie.');
+        window.location.hash = '#/postes';
+      } catch (err) {
+        boutonConnexion.disabled = false;
+        boutonConnexion.textContent = 'Se connecter';
+        if (err.code === 'VERROUILLE') {
+          HUMANO.ui.afficherMessage(err.message, 'erreur');
+        } else if (err.code === 'IDENTIFIANTS') {
+          HUMANO.ui.lierErreur(inputMdp, 'Mot de passe ou code incorrect.');
+          inputMdp.focus();
+        } else {
+          HUMANO.ui.afficherMessage(err.message || 'Impossible de se connecter.', 'erreur');
+        }
+      }
+    });
+  }
+
+  function afficherConnexion() {
+    HUMANO.ui.afficherEcran('ecran-connexion', 'Connexion');
+    const conteneur = document.getElementById('conteneur-auth');
+    if (!conteneur) return;
+    if (!etatSysteme.initialise) {
+      afficherFormulaireCreation(conteneur);
+    } else {
+      afficherFormulaireConnexion(conteneur);
+    }
+  }
+
+  async function deconnecter() {
+    try {
+      await HUMANO.api.appeler('auth.deconnexion', null);
+    } catch (ignore) {
+      // Ignorer l'erreur réseau éventuelle lors de la déconnexion
+    }
+    HUMANO.api.oublierJeton();
+    HUMANO.main.majNavigation();
+    HUMANO.ui.afficherMessage('Vous êtes déconnecté.', 'info');
+    window.location.hash = '#/connexion';
+  }
+
+  window.HUMANO = window.HUMANO || {};
+  window.HUMANO.auth = Object.freeze({
+    enregistrerEtatSysteme: enregistrerEtatSysteme,
+    afficherConnexion: afficherConnexion,
+    deconnecter: deconnecter
+  });
+})();
