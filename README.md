@@ -17,7 +17,7 @@ Ouvrez le lien sur un téléphone ou un ordinateur, acceptez la notice, puis pas
 
 **Console recruteur :** https://pauldiouf-arch.github.io/HUMANO/console.html
 
-| Identifiant temporaire (Paul DIOUF) | Mot de passe (Shaldagmk05paul |
+
 |---|---|
 | [IDENTIFIANT] | [MOT DE PASSE DE DÉMO] |
 
